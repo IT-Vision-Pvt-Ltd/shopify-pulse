@@ -1,7 +1,7 @@
 {
-  "buildCommand": "npx prisma generate && npx vite build",
-  "outputDirectory": "build/client",
   "framework": "remix",
   "installCommand": "npm install",
-  "regions": ["iad1"]
+  "regions": [
+    "iad1"
+  ]
 }
