@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "npx prisma generate && npx vite build",
   "outputDirectory": "build/client",
   "framework": "remix",
   "installCommand": "npm install",
