@@ -7,7 +7,15 @@ embedded = true
 scopes = "read_analytics,read_customers,read_inventory,read_marketing_events,read_orders,read_products,read_reports"
 
 [auth]
-redirect_urls = ["https://growthpilotai.com/api/auth/callback", "https://growthpilotai.com/auth/callback"]
+redirect_urls = ["https://growthpilot.icargos.com/api/auth/callback", "https://growthpilot.icargos.com/auth/callback"]
 
 [webhooks]
 api_version = "2024-01"
+
+[webhooks.subscriptions.compliance]
+topics = ["customers/data_request", "customers/redact", "shop/redact"]
+uri = "https://growthpilot.icargos.com/webhooks"
+
+[webhooks.subscriptions.app_lifecycle]
+topics = ["app/uninstalled"]
+uri = "https://growthpilot.icargos.com/webhooks/app/uninstalled"

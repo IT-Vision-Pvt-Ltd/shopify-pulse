@@ -1,0 +1,35 @@
+{
+  "name": "shopify-pulse",
+  "version": "1.0.0",
+  "description": "AI-Powered Shopify Analytics Dashboard - ShopifyPulse",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IT-Vision-Pvt-Ltd/shopify-pulse.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/IT-Vision-Pvt-Ltd/shopify-pulse/issues"
+  },
+  "homepage": "https://github.com/IT-Vision-Pvt-Ltd/shopify-pulse#readme",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.74.0",
+    "@remix-run/dev": "^2.17.4",
+    "@remix-run/node": "^2.17.4",
+    "@remix-run/react": "^2.17.4",
+    "@shopify/polaris": "^13.9.5",
+    "@shopify/shopify-app-remix": "^4.1.1",
+    "openai": "^6.22.0",
+    "vite": "^6.4.1"
+  },
+  "devDependencies": {
+    "@prisma/client": "^5.22.0",
+    "prisma": "^5.22.0"
+  }
+}

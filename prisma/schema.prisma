@@ -1,0 +1,227 @@
+// GrowthPilot AI - Shopify Analytics SaaS App
+// Prisma Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./../prisma/dev.sqlite"
+}
+
+// Shop/Store Information
+model Shop {
+  id              String   @id @default(cuid())
+  shopifyDomain   String   @unique
+  accessToken     String
+  name            String?
+  email           String?
+  plan            String   @default("free")
+  planExpiresAt   DateTime?
+  trialEndsAt     DateTime?
+  isActive        Boolean  @default(true)
+  installedAt     DateTime @default(now())
+  uninstalledAt   DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  settings        ShopSettings?
+  aiAnalyses      AIAnalysis[]
+  alerts          Alert[]
+  reports         Report[]
+  subscriptions   Subscription[]
+  webhooks        WebhookLog[]
+}
+
+// Shop Settings
+model ShopSettings {
+  id                    String   @id @default(cuid())
+  shopId                String   @unique
+  shop                  Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  
+  // AI Settings
+  openaiApiKey          String?
+  claudeApiKey          String?
+  selectedAiModel       String   @default("gpt-4")
+  dailyAnalysisEnabled  Boolean  @default(true)
+  analysisTime          String   @default("09:00")
+  
+  // Notification Settings
+  emailNotifications    Boolean  @default(true)
+  alertThresholds       String?  // JSON string for alert thresholds
+  
+  // Dashboard Settings
+  defaultDashboard      String   @default("overview")
+  currency              String   @default("USD")
+  timezone              String   @default("UTC")
+  
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+// AI Analysis Reports
+model AIAnalysis {
+  id              String   @id @default(cuid())
+  shopId          String
+  shop            Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  
+  type            String   // daily, weekly, monthly, custom
+  model           String   // gpt-4, claude-3, etc.
+  prompt          String?
+  response        String   // Full AI response
+  summary         String?  // Brief summary
+  insights        String?  // JSON array of insights
+  recommendations String?  // JSON array of recommendations
+  forecasts       String?  // JSON array of forecasts
+  
+  dataSnapshot    String?  // JSON snapshot of data used
+  tokensUsed      Int      @default(0)
+  processingTime  Int      @default(0) // in milliseconds
+  status          String   @default("completed") // pending, processing, completed, failed
+  error           String?
+  
+  createdAt       DateTime @default(now())
+}
+
+// Alerts & Notifications
+model Alert {
+  id              String   @id @default(cuid())
+  shopId          String
+  shop            Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  
+  type            String   // sales_spike, inventory_low, customer_churn, etc.
+  severity        String   // info, warning, critical
+  title           String
+  message         String
+  data            String?  // JSON additional data
+  isRead          Boolean  @default(false)
+  isDismissed     Boolean  @default(false)
+  actionUrl       String?
+  
+  createdAt       DateTime @default(now())
+  readAt          DateTime?
+}
+
+// Generated Reports
+model Report {
+  id              String   @id @default(cuid())
+  shopId          String
+  shop            Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  
+  type            String   // sales, inventory, customer, marketing
+  title           String
+  description     String?
+  data            String   // JSON report data
+  format          String   @default("json") // json, pdf, csv
+  fileUrl         String?
+  
+  dateFrom        DateTime
+  dateTo          DateTime
+  
+  createdAt       DateTime @default(now())
+}
+
+// Subscription/Billing
+model Subscription {
+  id                String   @id @default(cuid())
+  shopId            String
+  shop              Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  
+  shopifyChargeId   String?  @unique
+  plan              String   // free, starter, professional, enterprise
+  status            String   // active, cancelled, frozen, pending
+  price             Float
+  currency          String   @default("USD")
+  interval          String   @default("monthly") // monthly, annual
+  
+  trialDays         Int      @default(14)
+  trialStartedAt    DateTime?
+  trialEndsAt       DateTime?
+  
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  cancelledAt        DateTime?
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+// Webhook Logs
+model WebhookLog {
+  id              String   @id @default(cuid())
+  shopId          String?
+  shop            Shop?    @relation(fields: [shopId], references: [id], onDelete: SetNull)
+  
+  topic           String
+  payload         String   // JSON payload
+  status          String   @default("received") // received, processed, failed
+  error           String?
+  processingTime  Int?
+  
+  createdAt       DateTime @default(now())
+}
+
+// Session Management (for Shopify OAuth)
+model Session {
+  id              String   @id
+  shop            String
+  state           String
+  isOnline        Boolean  @default(false)
+  scope           String?
+  expires         DateTime?
+  accessToken     String
+  userId          BigInt?
+  firstName       String?
+  lastName        String?
+  email           String?
+  accountOwner    Boolean  @default(false)
+  locale          String?
+  collaborator    Boolean  @default(false)
+  emailVerified   Boolean  @default(false)
+}
+
+// Admin Users (for Admin Panel)
+model AdminUser {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  password        String
+  name            String
+  role            String   @default("admin") // super_admin, admin, support
+  isActive        Boolean  @default(true)
+  lastLoginAt     DateTime?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  adminLogs       AdminLog[]
+}
+
+// Admin Activity Logs
+model AdminLog {
+  id              String   @id @default(cuid())
+  adminUserId     String
+  adminUser       AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  
+  action          String
+  resource        String
+  resourceId      String?
+  details         String?
+  ipAddress       String?
+  
+  createdAt       DateTime @default(now())
+}
+
+// Analytics Cache (for faster dashboard loading)
+model AnalyticsCache {
+  id              String   @id @default(cuid())
+  shopId          String
+  type            String   // sales, orders, customers, products, inventory
+  period          String   // daily, weekly, monthly
+  data            String   // JSON cached data
+  
+  cachedAt        DateTime @default(now())
+  expiresAt       DateTime
+  
+  @@unique([shopId, type, period])
+}
