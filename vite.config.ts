@@ -13,5 +13,16 @@ export default defineConfig({
   ],
   build: {
     target: "esnext",
+    rollupOptions: {
+      external: [],
+    },
+  },
+  ssr: {
+    noExternal: ['@shopify/shopify-app-remix', '@shopify/polaris', '@shopify/app-bridge-react'],
+  },
+  resolve: {
+    alias: {
+      'react/jsx-runtime': 'react/jsx-runtime',
+    },
   },
 });
