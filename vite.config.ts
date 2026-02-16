@@ -1,27 +1,9 @@
 import { vitePlugin as remix } from "@remix-run/dev";
-import { installGlobals } from "@remix-run/node";
 import { defineConfig } from "vite";
-import { vercelPreset } from "@vercel/remix/vite";
-
-installGlobals();
-
-// Related: https://github.com/remix-run/remix/issues/2835#issuecomment-1144102176 ...
-// Replace the host env var with the one used by Vercel
-if (
-  process.env.HOST !== "0.0.0.0" &&
-  process.env.REMIX_DEV_ORIGIN &&
-  process.env.HOST
-) {
-  process.env.REMIX_DEV_ORIGIN = process.env.REMIX_DEV_ORIGIN.replace(
-    "localhost",
-    process.env.HOST
-  );
-}
 
 export default defineConfig({
   plugins: [
     remix({
-      presets: [vercelPreset()],
       future: {
         v3_fetcherPersist: true,
         v3_relativeSplatPath: true,

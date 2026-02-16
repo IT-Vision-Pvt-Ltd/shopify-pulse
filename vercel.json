@@ -1,5 +1,0 @@
-{
-  "installCommand": "npm install",
-  "buildCommand": "prisma generate && vite build",
-  "regions": ["iad1"]
-}
