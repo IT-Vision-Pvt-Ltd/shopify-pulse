@@ -1,7 +1,5 @@
 {
-  "framework": "remix",
   "installCommand": "npm install",
-  "regions": [
-    "iad1"
-  ]
+  "buildCommand": "prisma generate && vite build",
+  "regions": ["iad1"]
 }
