@@ -1,5 +1,6 @@
 import { vitePlugin as remix } from "@remix-run/dev";
 import { defineConfig } from "vite";
+import { vercelPreset } from "@vercel/remix/vite";
 
 // Related: https://github.com/remix-run/remix/issues/2835#issuecomment-1144102176
 // Replace the host env var with the one used by Vercel
@@ -17,6 +18,7 @@ if (
 export default defineConfig({
   plugins: [
     remix({
+      presets: [vercelPreset()],
       future: {
         v3_fetcherPersist: true,
         v3_relativeSplatPath: true,
