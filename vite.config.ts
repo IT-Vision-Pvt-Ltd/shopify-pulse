@@ -21,6 +21,11 @@ export default defineConfig({
       "@shopify/app-bridge-react",
       "react",
       "react-dom",
+      "react-router",
+      "react-router-dom",
+      "@remix-run/react",
+      "@remix-run/node",
+      "@remix-run/server-runtime",
     ],
   },
   resolve: {
