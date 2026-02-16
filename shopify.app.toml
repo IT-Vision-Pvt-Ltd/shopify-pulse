@@ -1,21 +1,21 @@
 name = "GrowthPilot Ai"
 client_id = "3a973754197c2089a028abb6469130ca"
-application_url = "https://shopify-pulse.vercel.app"
+application_url = "https://shopify-pulse-production.up.railway.app"
 embedded = true
 
 [access_scopes]
 scopes = "read_analytics,read_customers,read_inventory,read_marketing_events,read_orders,read_products,read_reports"
 
 [auth]
-redirect_urls = ["https://shopify-pulse.vercel.app/api/auth/callback", "https://shopify-pulse.vercel.app/auth/callback"]
+redirect_urls = ["https://shopify-pulse-production.up.railway.app/api/auth/callback", "https://shopify-pulse-production.up.railway.app/auth/callback"]
 
 [webhooks]
 api_version = "2024-01"
 
 [webhooks.subscriptions.compliance]
 topics = ["customers/data_request", "customers/redact", "shop/redact"]
-uri = "https://shopify-pulse.vercel.app/webhooks"
+uri = "https://shopify-pulse-production.up.railway.app/webhooks"
 
 [webhooks.subscriptions.app_lifecycle]
 topics = ["app/uninstalled"]
-uri = "https://shopify-pulse.vercel.app/webhooks/app/uninstalled"
+uri = "https://shopify-pulse-production.up.railway.app/webhooks/app/uninstalled"
