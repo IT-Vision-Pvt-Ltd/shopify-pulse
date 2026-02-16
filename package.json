@@ -4,7 +4,10 @@
   "description": "AI-Powered Shopify Analytics Dashboard - ShopifyPulse",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "prisma generate && vite build",
+    "dev": "shopify app dev",
+    "start": "remix-serve ./build/server/index.js"
   },
   "repository": {
     "type": "git",
