@@ -1,8 +1,11 @@
 import { vitePlugin as remix } from "@remix-run/dev";
+import { installGlobals } from "@remix-run/node";
 import { defineConfig } from "vite";
 import { vercelPreset } from "@vercel/remix/vite";
 
-// Related: https://github.com/remix-run/remix/issues/2835#issuecomment-1144102176
+installGlobals();
+
+// Related: https://github.com/remix-run/remix/issues/2835#issuecomment-1144102176 ...
 // Replace the host env var with the one used by Vercel
 if (
   process.env.HOST !== "0.0.0.0" &&
@@ -31,16 +34,16 @@ export default defineConfig({
   },
   ssr: {
     noExternal: [
-      '@shopify/shopify-app-remix',
-      '@shopify/polaris',
-      '@shopify/app-bridge-react',
-      'react',
-      'react-dom',
+      "@shopify/shopify-app-remix",
+      "@shopify/polaris",
+      "@shopify/app-bridge-react",
+      "react",
+      "react-dom",
     ],
   },
   resolve: {
     alias: {
-      'react/jsx-runtime': 'react/jsx-runtime',
+      "react/jsx-runtime": "react/jsx-runtime",
     },
   },
 });
