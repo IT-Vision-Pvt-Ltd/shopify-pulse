@@ -1,157 +1,102 @@
-import { json, type LoaderFunctionArgs } from "@remix-run/node";
+
+import { json } from "@remix-run/node";
+import type { LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
-import {
-  Page,
-  Layout,
-  Card,
-  Text,
-  BlockStack,
-  InlineStack,
-  Badge,
-  DataTable,
-  Select,
-  Button,
-  Box,
-} from "@shopify/polaris";
+import { Page, Layout, Card, BlockStack, InlineStack, Text, Badge, Divider, DataTable, Select } from "@shopify/polaris";
+import { authenticate } from "../../shopify.server";
 import { useState } from "react";
-import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { admin, session } = await authenticate.admin(request);
-  
-  return json({
-    salesData: [
-      { date: "2024-02-01", orders: 45, revenue: 4523.50, customers: 38 },
-      { date: "2024-02-02", orders: 52, revenue: 5120.00, customers: 45 },
-      { date: "2024-02-03", orders: 38, revenue: 3890.25, customers: 32 },
-      { date: "2024-02-04", orders: 61, revenue: 6234.00, customers: 55 },
-      { date: "2024-02-05", orders: 48, revenue: 4756.75, customers: 41 },
-    ],
-    metrics: {
-      totalOrders: 244,
-      totalRevenue: 24524.50,
-      averageOrderValue: 100.51,
-      totalCustomers: 211,
-      returningCustomers: 89,
-      newCustomers: 122,
-    },
+  const { admin } = await authenticate.admin(request);
+  const res = await admin.graphql(`
+    query {
+      orders(first: 100, sortKey: CREATED_AT, reverse: true) {
+        edges { node {
+          id name createdAt totalPriceSet { shopMoney { amount currencyCode } }
+          subtotalPriceSet { shopMoney { amount } }
+          totalTaxSet { shopMoney { amount } }
+          totalShippingPriceSet { shopMoney { amount } }
+          totalDiscountsSet { shopMoney { amount } }
+          displayFinancialStatus displayFulfillmentStatus
+          lineItems(first: 10) { edges { node { title quantity originalTotalSet { shopMoney { amount } } } } }
+        } }
+      }
+    }
+  `);
+  const data = await res.json();
+  const orders = data.data.orders.edges.map((e: any) => e.node);
+  const currency = orders[0]?.totalPriceSet?.shopMoney?.currencyCode || "USD";
+  const totalRevenue = orders.reduce((s: number, o: any) => s + parseFloat(o.totalPriceSet.shopMoney.amount), 0);
+  const totalTax = orders.reduce((s: number, o: any) => s + parseFloat(o.totalTaxSet.shopMoney.amount), 0);
+  const totalShipping = orders.reduce((s: number, o: any) => s + parseFloat(o.totalShippingPriceSet.shopMoney.amount), 0);
+  const totalDiscounts = orders.reduce((s: number, o: any) => s + parseFloat(o.totalDiscountsSet.shopMoney.amount), 0);
+  const netRevenue = totalRevenue - totalTax - totalShipping;
+  const avgOrderValue = orders.length > 0 ? totalRevenue / orders.length : 0;
+
+  const daily: Record<string, { revenue: number; orders: number }> = {};
+  orders.forEach((o: any) => {
+    const d = o.createdAt.split("T")[0];
+    if (!daily[d]) daily[d] = { revenue: 0, orders: 0 };
+    daily[d].revenue += parseFloat(o.totalPriceSet.shopMoney.amount);
+    daily[d].orders += 1;
   });
+
+  return json({ orders, currency, totalRevenue, totalTax, totalShipping, totalDiscounts, netRevenue, avgOrderValue, daily });
 };
 
 export default function Analytics() {
-  const { salesData, metrics } = useLoaderData<typeof loader>();
-  const [selectedPeriod, setSelectedPeriod] = useState("7days");
-
-  const rows = salesData.map((day) => [
-    day.date,
-    day.orders.toString(),
-    `$${day.revenue.toFixed(2)}`,
-    day.customers.toString(),
-  ]);
+  const d = useLoaderData<typeof loader>();
+  const fmt = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: d.currency }).format(n);
+  const dailyEntries = Object.entries(d.daily).sort(([a], [b]) => a.localeCompare(b)).slice(-30);
+  const maxRev = Math.max(...dailyEntries.map(([, v]) => (v as any).revenue), 1);
 
   return (
-    <Page
-      title="Analytics"
-      primaryAction={<Button variant="primary">Export Report</Button>}
-    >
+    <Page title="Sales & Revenue Analytics" backAction={{ content: "Dashboard", url: "/app" }}>
       <BlockStack gap="500">
-        {/* Period Selector */}
-        <Card>
-          <InlineStack align="space-between">
-            <Text as="h2" variant="headingMd">Sales Analytics</Text>
-            <Select
-              label="Time period"
-              labelHidden
-              options={[
-                { label: "Last 7 days", value: "7days" },
-                { label: "Last 30 days", value: "30days" },
-                { label: "Last 90 days", value: "90days" },
-                { label: "This year", value: "year" },
-              ]}
-              value={selectedPeriod}
-              onChange={setSelectedPeriod}
-            />
-          </InlineStack>
-        </Card>
+        <InlineStack gap="400" wrap={true}>
+          {[
+            { t: "Total Revenue", v: fmt(d.totalRevenue) },
+            { t: "Net Revenue", v: fmt(d.netRevenue) },
+            { t: "Avg Order Value", v: fmt(d.avgOrderValue) },
+            { t: "Total Tax", v: fmt(d.totalTax) },
+            { t: "Total Shipping", v: fmt(d.totalShipping) },
+            { t: "Total Discounts", v: fmt(d.totalDiscounts) },
+          ].map((k, i) => (
+            <div key={i} style={{ flex: "1 1 160px" }}>
+              <Card><BlockStack gap="200">
+                <Text as="p" variant="bodySm" tone="subdued">{k.t}</Text>
+                <Text as="p" variant="headingLg" fontWeight="bold">{k.v}</Text>
+              </BlockStack></Card>
+            </div>
+          ))}
+        </InlineStack>
 
-        {/* Key Metrics */}
-        <Layout>
-          <Layout.Section variant="oneThird">
-            <Card>
-              <BlockStack gap="200">
-                <Text as="h3" variant="headingMd">Total Orders</Text>
-                <Text as="p" variant="headingXl">{metrics.totalOrders}</Text>
-                <Badge tone="success">+15% vs last period</Badge>
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-          <Layout.Section variant="oneThird">
-            <Card>
-              <BlockStack gap="200">
-                <Text as="h3" variant="headingMd">Total Revenue</Text>
-                <Text as="p" variant="headingXl">${metrics.totalRevenue.toLocaleString()}</Text>
-                <Badge tone="success">+22% vs last period</Badge>
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-          <Layout.Section variant="oneThird">
-            <Card>
-              <BlockStack gap="200">
-                <Text as="h3" variant="headingMd">Avg Order Value</Text>
-                <Text as="p" variant="headingXl">${metrics.averageOrderValue.toFixed(2)}</Text>
-                <Badge tone="info">+5% vs last period</Badge>
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-        </Layout>
-
-        {/* Customer Metrics */}
-        <Layout>
-          <Layout.Section variant="oneHalf">
-            <Card>
-              <BlockStack gap="400">
-                <Text as="h2" variant="headingMd">Customer Breakdown</Text>
-                <InlineStack gap="400">
-                  <BlockStack gap="100">
-                    <Text as="p" tone="subdued">New Customers</Text>
-                    <Text as="p" variant="headingLg">{metrics.newCustomers}</Text>
-                  </BlockStack>
-                  <BlockStack gap="100">
-                    <Text as="p" tone="subdued">Returning</Text>
-                    <Text as="p" variant="headingLg">{metrics.returningCustomers}</Text>
-                  </BlockStack>
-                  <BlockStack gap="100">
-                    <Text as="p" tone="subdued">Total</Text>
-                    <Text as="p" variant="headingLg">{metrics.totalCustomers}</Text>
-                  </BlockStack>
-                </InlineStack>
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-          <Layout.Section variant="oneHalf">
-            <Card>
-              <BlockStack gap="400">
-                <Text as="h2" variant="headingMd">AI Recommendation</Text>
-                <Box background="bg-surface-secondary" padding="400" borderRadius="200">
-                  <Text as="p">
-                    Based on your data, focus on email campaigns targeting returning customers. 
-                    They show 40% higher conversion rates than new visitors.
-                  </Text>
-                </Box>
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-        </Layout>
-
-        {/* Data Table */}
         <Card>
           <BlockStack gap="400">
-            <Text as="h2" variant="headingMd">Daily Sales Data</Text>
+            <Text as="h2" variant="headingMd">Daily Revenue (Last 30 Days)</Text>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 200, padding: "0 4px" }}>
+              {dailyEntries.map(([day, val], i) => {
+                const h = ((val as any).revenue / maxRev) * 170;
+                return (
+                  <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                    <div style={{ width: "100%", height: h, backgroundColor: "var(--p-color-bg-fill-success)", borderRadius: 3, minHeight: 2 }} />
+                    <Text as="p" variant="bodySm" tone="subdued">{day.slice(8)}</Text>
+                  </div>
+                );
+              })}
+            </div>
+          </BlockStack>
+        </Card>
+
+        <Card>
+          <BlockStack gap="300">
+            <Text as="h2" variant="headingMd">Revenue Breakdown</Text>
             <DataTable
-              columnContentTypes={["text", "numeric", "numeric", "numeric"]}
-              headings={["Date", "Orders", "Revenue", "Customers"]}
-              rows={rows}
-              totals={["", metrics.totalOrders.toString(), `$${metrics.totalRevenue.toFixed(2)}`, metrics.totalCustomers.toString()]}
+              columnContentTypes={["text", "numeric", "numeric", "numeric", "numeric"]}
+              headings={["Date", "Orders", "Revenue", "Tax", "Net"]}
+              rows={dailyEntries.slice(-14).reverse().map(([day, val]) => [
+                day, (val as any).orders.toString(), fmt((val as any).revenue), "-", fmt((val as any).revenue)
+              ])}
             />
           </BlockStack>
         </Card>

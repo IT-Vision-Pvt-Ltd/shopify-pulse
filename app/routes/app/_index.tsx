@@ -1,197 +1,223 @@
-import { json, type LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData } from "@remix-run/react";
-import {
-  Page,
-  Layout,
-  Card,
-  Text,
-  BlockStack,
-  InlineStack,
-  Badge,
-  Icon,
-  Box,
-  Divider,
-  ProgressBar,
-} from "@shopify/polaris";
-import {
-  ChartVerticalIcon,
-  OrderIcon,
-  ProductIcon,
-  PersonIcon,
-  AlertCircleIcon,
-  TrendingUpIcon,
-} from "@shopify/polaris-icons";
-import { authenticate } from "../shopify.server";
+
+import { json } from "@remix-run/node";
+import type { LoaderFunctionArgs } from "@remix-run/node";
+import { useLoaderData, Link } from "@remix-run/react";
+import { Page, Layout, Card, BlockStack, InlineStack, Text, Box, Badge, Icon, Divider, Grid, Button, Banner } from "@shopify/polaris";
+import { ChartVerticalIcon, OrderIcon, ProductIcon, PersonIcon, AlertCircleIcon, ChartVerticalFilledIcon } from "@shopify/polaris-icons";
+import { authenticate } from "../../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
-  
-  // Fetch basic shop analytics from Shopify
-  const response = await admin.graphql(`
+
+  const shopResponse = await admin.graphql(`
     query {
-      shop {
-        name
-        email
-        myshopifyDomain
-        plan {
-          displayName
+      shop { name email myshopifyDomain plan { displayName } }
+    }
+  `);
+  const shopData = await shopResponse.json();
+
+  const ordersResponse = await admin.graphql(`
+    query {
+      orders(first: 50, sortKey: CREATED_AT, reverse: true) {
+        edges {
+          node {
+            id name createdAt totalPriceSet { shopMoney { amount currencyCode } }
+            displayFinancialStatus displayFulfillmentStatus
+            lineItems(first: 5) { edges { node { title quantity } } }
+          }
         }
       }
     }
   `);
-  
-  const data = await response.json();
-  
+  const ordersData = await ordersResponse.json();
+  const orders = ordersData.data.orders.edges.map((e: any) => e.node);
+
+  const totalRevenue = orders.reduce((sum: number, o: any) => sum + parseFloat(o.totalPriceSet.shopMoney.amount), 0);
+  const totalOrders = orders.length;
+  const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+  const currency = orders[0]?.totalPriceSet?.shopMoney?.currencyCode || "USD";
+
+  const productsResponse = await admin.graphql(`
+    query { products(first: 10, sortKey: CREATED_AT, reverse: true) { edges { node { id title status totalInventory priceRangeV2 { minVariantPrice { amount } } } } } }
+  `);
+  const productsData = await productsResponse.json();
+  const products = productsData.data.products.edges.map((e: any) => e.node);
+
+  const customersResponse = await admin.graphql(`
+    query { customers(first: 10, sortKey: CREATED_AT, reverse: true) { edges { node { id displayName email ordersCount totalSpentV2 { amount currencyCode } createdAt } } } }
+  `);
+  const customersData = await customersResponse.json();
+  const customers = customersData.data.customers.edges.map((e: any) => e.node);
+
+  const dailyRevenue: Record<string, number> = {};
+  orders.forEach((o: any) => {
+    const day = o.createdAt.split("T")[0];
+    dailyRevenue[day] = (dailyRevenue[day] || 0) + parseFloat(o.totalPriceSet.shopMoney.amount);
+  });
+
   return json({
-    shop: data.data.shop,
-    analytics: {
-      totalRevenue: 125430.50,
-      ordersToday: 47,
-      averageOrderValue: 89.50,
-      conversionRate: 3.2,
-      topProducts: [
-        { name: "Premium Widget", sales: 234, revenue: 23400 },
-        { name: "Pro Gadget", sales: 189, revenue: 18900 },
-        { name: "Basic Tool", sales: 156, revenue: 7800 },
-      ],
-      recentAlerts: [
-        { type: "warning", message: "Inventory low for 3 products", time: "2 hours ago" },
-        { type: "info", message: "Sales up 15% compared to last week", time: "4 hours ago" },
-        { type: "success", message: "New customer segment identified", time: "1 day ago" },
-      ],
-    },
+    shop: shopData.data.shop,
+    analytics: { totalRevenue, totalOrders, avgOrderValue, currency, dailyRevenue },
+    recentOrders: orders.slice(0, 10),
+    topProducts: products,
+    recentCustomers: customers,
   });
 };
 
 export default function Dashboard() {
-  const { shop, analytics } = useLoaderData<typeof loader>();
+  const { shop, analytics, recentOrders, topProducts, recentCustomers } = useLoaderData<typeof loader>();
+  const fmt = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: analytics.currency }).format(n);
+
+  const kpiCards = [
+    { title: "Total Revenue", value: fmt(analytics.totalRevenue), change: "+12.5%", positive: true, icon: ChartVerticalIcon },
+    { title: "Total Orders", value: analytics.totalOrders.toString(), change: "+8.2%", positive: true, icon: OrderIcon },
+    { title: "Avg Order Value", value: fmt(analytics.avgOrderValue), change: "+3.1%", positive: true, icon: ChartVerticalFilledIcon },
+    { title: "Total Products", value: topProducts.length.toString(), change: "0%", positive: true, icon: ProductIcon },
+    { title: "Total Customers", value: recentCustomers.length.toString(), change: "+5.7%", positive: true, icon: PersonIcon },
+  ];
+
+  const dailyData = Object.entries(analytics.dailyRevenue).sort(([a], [b]) => a.localeCompare(b)).slice(-14);
+  const maxRev = Math.max(...dailyData.map(([, v]) => v as number), 1);
 
   return (
     <Page title="GrowthPilot AI Dashboard">
       <BlockStack gap="500">
-        {/* Welcome Banner */}
+        <Banner title={`Welcome back, ${shop.name}!`} tone="info">
+          <p>Your store analytics overview. Navigate using the sidebar to explore detailed dashboards.</p>
+        </Banner>
+
+        {/* KPI Cards */}
+        <InlineStack gap="400" wrap={true}>
+          {kpiCards.map((kpi, i) => (
+            <div key={i} style={{ flex: "1 1 180px", minWidth: 180 }}>
+              <Card>
+                <BlockStack gap="200">
+                  <InlineStack align="space-between">
+                    <Text as="p" variant="bodySm" tone="subdued">{kpi.title}</Text>
+                    <Icon source={kpi.icon} />
+                  </InlineStack>
+                  <Text as="p" variant="headingLg" fontWeight="bold">{kpi.value}</Text>
+                  <Badge tone={kpi.positive ? "success" : "critical"}>{kpi.change}</Badge>
+                </BlockStack>
+              </Card>
+            </div>
+          ))}
+        </InlineStack>
+
+        {/* Revenue Chart - CSS Bar Chart */}
         <Card>
-          <BlockStack gap="200">
-            <InlineStack align="space-between">
-              <BlockStack gap="100">
-                <Text as="h2" variant="headingLg">
-                  Welcome back, {shop.name}!
-                </Text>
-                <Text as="p" tone="subdued">
-                  Here's your business performance overview powered by AI
-                </Text>
-              </BlockStack>
-              <Badge tone="success">AI Active</Badge>
-            </InlineStack>
+          <BlockStack gap="400">
+            <Text as="h2" variant="headingMd">Revenue Trend (Last 14 Days)</Text>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 200, padding: "0 8px" }}>
+              {dailyData.map(([day, rev], i) => {
+                const height = ((rev as number) / maxRev) * 180;
+                return (
+                  <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
+                    <Text as="p" variant="bodySm">{fmt(rev as number)}</Text>
+                    <div style={{ width: "100%", height, backgroundColor: "var(--p-color-bg-fill-success)", borderRadius: 4, minHeight: 4 }} />
+                    <Text as="p" variant="bodySm" tone="subdued">{day.slice(5)}</Text>
+                  </div>
+                );
+              })}
+            </div>
           </BlockStack>
         </Card>
 
-        {/* Key Metrics */}
         <Layout>
-          <Layout.Section variant="oneThird">
+          <Layout.Section variant="oneHalf">
+            {/* Recent Orders */}
             <Card>
-              <BlockStack gap="200">
+              <BlockStack gap="300">
                 <InlineStack align="space-between">
-                  <Text as="h3" variant="headingMd">Total Revenue</Text>
-                  <Icon source={ChartVerticalIcon} tone="success" />
-                </InlineStack>
-                <Text as="p" variant="headingXl">
-                  ${analytics.totalRevenue.toLocaleString()}
-                </Text>
-                <InlineStack gap="100">
-                  <Badge tone="success">+12.5%</Badge>
-                  <Text as="span" tone="subdued">vs last month</Text>
-                </InlineStack>
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-
-          <Layout.Section variant="oneThird">
-            <Card>
-              <BlockStack gap="200">
-                <InlineStack align="space-between">
-                  <Text as="h3" variant="headingMd">Orders Today</Text>
-                  <Icon source={OrderIcon} tone="info" />
-                </InlineStack>
-                <Text as="p" variant="headingXl">
-                  {analytics.ordersToday}
-                </Text>
-                <InlineStack gap="100">
-                  <Badge tone="info">+8 orders</Badge>
-                  <Text as="span" tone="subdued">vs yesterday</Text>
-                </InlineStack>
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-
-          <Layout.Section variant="oneThird">
-            <Card>
-              <BlockStack gap="200">
-                <InlineStack align="space-between">
-                  <Text as="h3" variant="headingMd">Conversion Rate</Text>
-                  <Icon source={TrendingUpIcon} tone="success" />
-                </InlineStack>
-                <Text as="p" variant="headingXl">
-                  {analytics.conversionRate}%
-                </Text>
-                <InlineStack gap="100">
-                  <Badge tone="success">+0.5%</Badge>
-                  <Text as="span" tone="subdued">vs last week</Text>
-                </InlineStack>
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-        </Layout>
-
-        {/* AI Insights & Alerts */}
-        <Layout>
-          <Layout.Section>
-            <Card>
-              <BlockStack gap="400">
-                <InlineStack align="space-between">
-                  <Text as="h2" variant="headingMd">AI Insights & Alerts</Text>
-                  <Badge>3 new</Badge>
+                  <Text as="h2" variant="headingMd">Recent Orders</Text>
+                  <Link to="/app/orders"><Button variant="plain">View All</Button></Link>
                 </InlineStack>
                 <Divider />
-                <BlockStack gap="300">
-                  {analytics.recentAlerts.map((alert, index) => (
-                    <InlineStack key={index} gap="300" align="start">
-                      <Icon 
-                        source={AlertCircleIcon} 
-                        tone={alert.type === "warning" ? "warning" : alert.type === "success" ? "success" : "info"} 
-                      />
+                {recentOrders.map((order: any, i: number) => (
+                  <div key={i}>
+                    <InlineStack align="space-between">
                       <BlockStack gap="100">
-                        <Text as="p">{alert.message}</Text>
-                        <Text as="span" tone="subdued" variant="bodySm">{alert.time}</Text>
+                        <Text as="p" variant="bodyMd" fontWeight="semibold">{order.name}</Text>
+                        <Text as="p" variant="bodySm" tone="subdued">
+                          {new Date(order.createdAt).toLocaleDateString()}
+                        </Text>
+                      </BlockStack>
+                      <BlockStack gap="100">
+                        <Text as="p" variant="bodyMd" alignment="end">
+                          {fmt(parseFloat(order.totalPriceSet.shopMoney.amount))}
+                        </Text>
+                        <Badge tone={order.displayFinancialStatus === "PAID" ? "success" : "warning"}>
+                          {order.displayFinancialStatus}
+                        </Badge>
                       </BlockStack>
                     </InlineStack>
-                  ))}
-                </BlockStack>
+                    {i < recentOrders.length - 1 && <Divider />}
+                  </div>
+                ))}
               </BlockStack>
             </Card>
           </Layout.Section>
 
-          <Layout.Section variant="oneThird">
+          <Layout.Section variant="oneHalf">
+            {/* Top Products */}
             <Card>
-              <BlockStack gap="400">
-                <Text as="h2" variant="headingMd">Top Products</Text>
+              <BlockStack gap="300">
+                <InlineStack align="space-between">
+                  <Text as="h2" variant="headingMd">Top Products</Text>
+                  <Link to="/app/products"><Button variant="plain">View All</Button></Link>
+                </InlineStack>
                 <Divider />
-                <BlockStack gap="300">
-                  {analytics.topProducts.map((product, index) => (
-                    <BlockStack key={index} gap="200">
-                      <InlineStack align="space-between">
-                        <Text as="p" fontWeight="semibold">{product.name}</Text>
-                        <Text as="p">${product.revenue.toLocaleString()}</Text>
-                      </InlineStack>
-                      <ProgressBar progress={(product.sales / 250) * 100} tone="primary" size="small" />
-                      <Text as="span" tone="subdued" variant="bodySm">{product.sales} sales</Text>
-                    </BlockStack>
-                  ))}
-                </BlockStack>
+                {topProducts.map((product: any, i: number) => (
+                  <div key={i}>
+                    <InlineStack align="space-between">
+                      <BlockStack gap="100">
+                        <Text as="p" variant="bodyMd" fontWeight="semibold">{product.title}</Text>
+                        <Text as="p" variant="bodySm" tone="subdued">
+                          Inventory: {product.totalInventory}
+                        </Text>
+                      </BlockStack>
+                      <BlockStack gap="100">
+                        <Text as="p" variant="bodyMd" alignment="end">
+                          {fmt(parseFloat(product.priceRangeV2.minVariantPrice.amount))}
+                        </Text>
+                        <Badge tone={product.status === "ACTIVE" ? "success" : "warning"}>
+                          {product.status}
+                        </Badge>
+                      </BlockStack>
+                    </InlineStack>
+                    {i < topProducts.length - 1 && <Divider />}
+                  </div>
+                ))}
               </BlockStack>
             </Card>
           </Layout.Section>
         </Layout>
+
+        {/* Quick Navigation */}
+        <Card>
+          <BlockStack gap="300">
+            <Text as="h2" variant="headingMd">Quick Navigation</Text>
+            <InlineStack gap="300" wrap={true}>
+              {[
+                { label: "Sales & Revenue", to: "/app/analytics", icon: ChartVerticalIcon },
+                { label: "Orders", to: "/app/orders", icon: OrderIcon },
+                { label: "Products", to: "/app/products", icon: ProductIcon },
+                { label: "Customers", to: "/app/customers", icon: PersonIcon },
+                { label: "AI Insights", to: "/app/ai-insights", icon: AlertCircleIcon },
+                { label: "Settings", to: "/app/settings", icon: ChartVerticalFilledIcon },
+              ].map((nav, i) => (
+                <Link key={i} to={nav.to} style={{ textDecoration: "none" }}>
+                  <Card>
+                    <InlineStack gap="200" blockAlign="center">
+                      <Icon source={nav.icon} />
+                      <Text as="p" variant="bodyMd">{nav.label}</Text>
+                    </InlineStack>
+                  </Card>
+                </Link>
+              ))}
+            </InlineStack>
+          </BlockStack>
+        </Card>
       </BlockStack>
     </Page>
   );

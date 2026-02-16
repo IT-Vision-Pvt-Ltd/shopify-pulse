@@ -21,6 +21,8 @@ export default defineConfig({
       "@shopify/app-bridge-react",
       "react",
       "react-dom",
+                  "recharts",
+            "date-fns",
       "react-router",
       "react-router-dom",
       "@remix-run/react",

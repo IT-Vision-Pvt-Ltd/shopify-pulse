@@ -1,294 +1,74 @@
-import { json, type LoaderFunctionArgs, type ActionFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useSubmit, useNavigation } from "@remix-run/react";
-import {
-  Page,
-  Layout,
-  Card,
-  Text,
-  BlockStack,
-  InlineStack,
-  Badge,
-  Box,
-  Divider,
-  Icon,
-  Button,
-  Banner,
-  ProgressBar,
-  Spinner,
-} from "@shopify/polaris";
-import {
-  ChartVerticalIcon,
-  TrendingUpIcon,
-  AlertCircleIcon,
-  LightbulbIcon,
-  RefreshIcon,
-  CheckCircleIcon,
-  ClockIcon,
-} from "@shopify/polaris-icons";
-import { useState } from "react";
-import { authenticate } from "../shopify.server";
+
+import { json } from "@remix-run/node";
+import type { LoaderFunctionArgs } from "@remix-run/node";
+import { useLoaderData } from "@remix-run/react";
+import { Page, Card, BlockStack, InlineStack, Text, Badge, Banner, Divider, Button } from "@shopify/polaris";
+import { authenticate } from "../../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { admin, session } = await authenticate.admin(request);
+  const { admin } = await authenticate.admin(request);
+  const ordersRes = await admin.graphql(`query { orders(first: 50, sortKey: CREATED_AT, reverse: true) { edges { node { id name createdAt totalPriceSet { shopMoney { amount currencyCode } } displayFinancialStatus lineItems(first: 5) { edges { node { title quantity } } } } } } }`);
+  const oData = await ordersRes.json();
+  const orders = oData.data.orders.edges.map((e: any) => e.node);
+  const currency = orders[0]?.totalPriceSet?.shopMoney?.currencyCode || "USD";
+  const totalRev = orders.reduce((s: number, o: any) => s + parseFloat(o.totalPriceSet.shopMoney.amount), 0);
+  const avgOrder = orders.length > 0 ? totalRev / orders.length : 0;
 
-  // In production, fetch from database and AI service
-  const aiInsights = {
-    lastAnalysis: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-    nextAnalysis: new Date(Date.now() + 20 * 60 * 60 * 1000).toISOString(),
-    aiModel: "GPT-4",
-    overallScore: 78,
-    categories: [
-      {
-        name: "Sales Performance",
-        score: 85,
-        trend: "up",
-        insights: [
-          "Revenue is 15% above your monthly average",
-          "Tuesday and Wednesday are your best performing days",
-          "Consider running promotions on slower weekends",
-        ],
-        recommendations: [
-          "Launch a mid-week flash sale to capitalize on peak traffic",
-          "Bundle slow-moving products with bestsellers",
-        ],
-      },
-      {
-        name: "Customer Behavior",
-        score: 72,
-        trend: "stable",
-        insights: [
-          "Cart abandonment rate is 68% (industry avg: 70%)",
-          "Average time to purchase: 3.2 days",
-          "Mobile users convert 23% less than desktop",
-        ],
-        recommendations: [
-          "Implement exit-intent popups with discount offers",
-          "Optimize mobile checkout flow",
-          "Send abandoned cart emails within 1 hour",
-        ],
-      },
-      {
-        name: "Inventory Health",
-        score: 65,
-        trend: "down",
-        insights: [
-          "3 products are at critical stock levels",
-          "Overstock detected on 5 products (120+ days supply)",
-          "Seasonal demand shift expected in 2 weeks",
-        ],
-        recommendations: [
-          "Reorder 'Wireless Headphones' immediately - 5 day stockout risk",
-          "Run clearance sale on overstocked items",
-          "Increase winter category inventory by 30%",
-        ],
-      },
-      {
-        name: "Growth Opportunities",
-        score: 88,
-        trend: "up",
-        insights: [
-          "Untapped market segment identified: 25-34 age group",
-          "Cross-sell opportunities: 40% of customers buy single items",
-          "Email list growth rate: +12% this month",
-        ],
-        recommendations: [
-          "Create targeted ads for 25-34 demographic on Instagram",
-          "Implement 'Frequently bought together' feature",
-          "Launch referral program to accelerate growth",
-        ],
-      },
-    ],
-    actionItems: [
-      { priority: "high", action: "Restock Wireless Headphones Pro", deadline: "Within 3 days" },
-      { priority: "high", action: "Review checkout flow for mobile users", deadline: "This week" },
-      { priority: "medium", action: "Set up abandoned cart automation", deadline: "Within 2 weeks" },
-      { priority: "medium", action: "Plan winter inventory increase", deadline: "Within 2 weeks" },
-      { priority: "low", action: "Explore Instagram ad campaign", deadline: "This month" },
-    ],
-  };
+  const productsRes = await admin.graphql(`query { products(first: 50) { edges { node { title totalInventory status } } } }`);
+  const pData = await productsRes.json();
+  const products = pData.data.products.edges.map((e: any) => e.node);
+  const lowStock = products.filter((p: any) => p.totalInventory > 0 && p.totalInventory < 10);
+  const outOfStock = products.filter((p: any) => p.totalInventory === 0);
 
-  return json({ aiInsights });
-};
+  const insights = [
+    { type: "revenue", title: "Revenue Analysis", description: `Your total revenue from recent ${orders.length} orders is $${totalRev.toFixed(2)}. Average order value is $${avgOrder.toFixed(2)}.`, tone: "info" as const },
+    lowStock.length > 0 ? { type: "inventory", title: "Low Stock Alert", description: `${lowStock.length} products have low inventory (< 10 units): ${lowStock.map((p: any) => p.title).join(", ")}`, tone: "warning" as const } : null,
+    outOfStock.length > 0 ? { type: "inventory", title: "Out of Stock Alert", description: `${outOfStock.length} products are out of stock: ${outOfStock.map((p: any) => p.title).join(", ")}`, tone: "critical" as const } : null,
+    { type: "growth", title: "Growth Opportunity", description: "Consider running targeted email campaigns to increase repeat purchases. Focus on your top-selling products to maximize revenue.", tone: "success" as const },
+    { type: "optimization", title: "Store Optimization", description: "Review your product descriptions and images. Well-optimized listings can increase conversion rates by 20-30%.", tone: "info" as const },
+  ].filter(Boolean);
 
-export const action = async ({ request }: ActionFunctionArgs) => {
-  const { admin, session } = await authenticate.admin(request);
-  // Trigger new AI analysis
-  return json({ success: true, message: "AI analysis started" });
+  return json({ insights, stats: { totalOrders: orders.length, totalRevenue: totalRev, avgOrderValue: avgOrder, lowStockCount: lowStock.length, outOfStockCount: outOfStock.length }, currency });
 };
 
 export default function AIInsights() {
-  const { aiInsights } = useLoaderData<typeof loader>();
-  const submit = useSubmit();
-  const navigation = useNavigation();
-  const [analyzing, setAnalyzing] = useState(false);
-
-  const handleRunAnalysis = () => {
-    setAnalyzing(true);
-    const formData = new FormData();
-    formData.append("action", "analyze");
-    submit(formData, { method: "post" });
-    setTimeout(() => setAnalyzing(false), 5000);
-  };
-
-  const getScoreColor = (score: number) => {
-    if (score >= 80) return "success";
-    if (score >= 60) return "warning";
-    return "critical";
-  };
-
-  const getTrendIcon = (trend: string) => {
-    if (trend === "up") return <Badge tone="success">↑ Improving</Badge>;
-    if (trend === "down") return <Badge tone="critical">↓ Needs Attention</Badge>;
-    return <Badge tone="info">→ Stable</Badge>;
-  };
+  const { insights, stats, currency } = useLoaderData<typeof loader>();
+  const fmt = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency }).format(n);
 
   return (
-    <Page
-      title="AI Insights"
-      subtitle="AI-powered business analysis and recommendations"
-      primaryAction={
-        <Button
-          variant="primary"
-          icon={RefreshIcon}
-          onClick={handleRunAnalysis}
-          loading={analyzing}
-        >
-          Run New Analysis
-        </Button>
-      }
-    >
+    <Page title="AI Insights & Recommendations" backAction={{ content: "Dashboard", url: "/app" }}>
       <BlockStack gap="500">
-        {/* Analysis Status */}
-        <Banner tone="info">
-          <InlineStack gap="400" blockAlign="center">
-            <Text as="p">
-              Last analysis: {new Date(aiInsights.lastAnalysis).toLocaleString()} using {aiInsights.aiModel}
-            </Text>
-            <Text as="span" tone="subdued">|
-            </Text>
-            <Text as="p">
-              Next scheduled: {new Date(aiInsights.nextAnalysis).toLocaleString()}
-            </Text>
-          </InlineStack>
+        <Banner title="AI-Powered Analytics" tone="info">
+          <p>GrowthPilot AI analyzes your store data to provide actionable insights and recommendations.</p>
         </Banner>
 
-        {/* Overall Score */}
-        <Card>
-          <BlockStack gap="400">
-            <InlineStack align="space-between">
-              <BlockStack gap="100">
-                <Text as="h2" variant="headingLg">Overall Business Health Score</Text>
-                <Text as="p" tone="subdued">Based on AI analysis of your store data</Text>
-              </BlockStack>
-              <div style={{
-                width: 80,
-                height: 80,
-                borderRadius: "50%",
-                background: aiInsights.overallScore >= 80 ? "#AEE9D1" :
-                           aiInsights.overallScore >= 60 ? "#FFEA8A" : "#FED3D1",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}>
-                <Text as="p" variant="heading2xl" fontWeight="bold">
-                  {aiInsights.overallScore}
-                </Text>
-              </div>
-            </InlineStack>
-            <ProgressBar
-              progress={aiInsights.overallScore}
-              tone={getScoreColor(aiInsights.overallScore)}
-              size="small"
-            />
-          </BlockStack>
-        </Card>
-
-        {/* Priority Action Items */}
-        <Card>
-          <BlockStack gap="400">
-            <InlineStack align="space-between">
-              <Text as="h2" variant="headingMd">Priority Action Items</Text>
-              <Badge tone="attention">{aiInsights.actionItems.length} items</Badge>
-            </InlineStack>
-            <Divider />
-            <BlockStack gap="300">
-              {aiInsights.actionItems.map((item: any, index: number) => (
-                <InlineStack key={index} align="space-between" blockAlign="center">
-                  <InlineStack gap="300" blockAlign="center">
-                    <Badge tone={item.priority === "high" ? "critical" : item.priority === "medium" ? "warning" : "info"}>
-                      {item.priority.toUpperCase()}
-                    </Badge>
-                    <Text as="span">{item.action}</Text>
-                  </InlineStack>
-                  <InlineStack gap="200">
-                    <Icon source={ClockIcon} tone="subdued" />
-                    <Text as="span" tone="subdued" variant="bodySm">{item.deadline}</Text>
-                  </InlineStack>
-                </InlineStack>
-              ))}
-            </BlockStack>
-          </BlockStack>
-        </Card>
-
-        {/* Category Analysis */}
-        <Layout>
-          {aiInsights.categories.map((category: any, index: number) => (
-            <Layout.Section key={index} variant="oneHalf">
-              <Card>
-                <BlockStack gap="400">
-                  <InlineStack align="space-between">
-                    <BlockStack gap="100">
-                      <Text as="h2" variant="headingMd">{category.name}</Text>
-                      {getTrendIcon(category.trend)}
-                    </BlockStack>
-                    <div style={{
-                      padding: "8px 16px",
-                      borderRadius: 20,
-                      background: category.score >= 80 ? "#AEE9D1" :
-                                 category.score >= 60 ? "#FFEA8A" : "#FED3D1",
-                    }}>
-                      <Text as="span" fontWeight="bold">{category.score}/100</Text>
-                    </div>
-                  </InlineStack>
-
-                  <ProgressBar
-                    progress={category.score}
-                    tone={getScoreColor(category.score)}
-                    size="small"
-                  />
-
-                  <Divider />
-
-                  <BlockStack gap="200">
-                    <InlineStack gap="200">
-                      <Icon source={LightbulbIcon} tone="info" />
-                      <Text as="h3" variant="headingSm">Key Insights</Text>
-                    </InlineStack>
-                    {category.insights.map((insight: string, i: number) => (
-                      <InlineStack key={i} gap="200" blockAlign="start">
-                        <div style={{ minWidth: 6, minHeight: 6, borderRadius: "50%", background: "#5C6AC4", marginTop: 8 }} />
-                        <Text as="span" variant="bodySm">{insight}</Text>
-                      </InlineStack>
-                    ))}
-                  </BlockStack>
-
-                  <BlockStack gap="200">
-                    <InlineStack gap="200">
-                      <Icon source={CheckCircleIcon} tone="success" />
-                      <Text as="h3" variant="headingSm">Recommendations</Text>
-                    </InlineStack>
-                    {category.recommendations.map((rec: string, i: number) => (
-                      <InlineStack key={i} gap="200" blockAlign="start">
-                        <div style={{ minWidth: 6, minHeight: 6, borderRadius: "50%", background: "#50B83C", marginTop: 8 }} />
-                        <Text as="span" variant="bodySm">{rec}</Text>
-                      </InlineStack>
-                    ))}
-                  </BlockStack>
-                </BlockStack>
-              </Card>
-            </Layout.Section>
+        <InlineStack gap="400" wrap={true}>
+          {[
+            { t: "Recent Orders", v: stats.totalOrders.toString() },
+            { t: "Revenue", v: fmt(stats.totalRevenue) },
+            { t: "Avg Order", v: fmt(stats.avgOrderValue) },
+            { t: "Low Stock Items", v: stats.lowStockCount.toString() },
+          ].map((k, i) => (
+            <div key={i} style={{ flex: "1 1 160px" }}>
+              <Card><BlockStack gap="200">
+                <Text as="p" variant="bodySm" tone="subdued">{k.t}</Text>
+                <Text as="p" variant="headingLg" fontWeight="bold">{k.v}</Text>
+              </BlockStack></Card>
+            </div>
           ))}
-        </Layout>
+        </InlineStack>
+
+        {insights.map((insight: any, i: number) => (
+          <Card key={i}>
+            <BlockStack gap="300">
+              <InlineStack align="space-between">
+                <Text as="h2" variant="headingMd">{insight.title}</Text>
+                <Badge tone={insight.tone}>{insight.type}</Badge>
+              </InlineStack>
+              <Text as="p" variant="bodyMd">{insight.description}</Text>
+            </BlockStack>
+          </Card>
+        ))}
       </BlockStack>
     </Page>
   );
