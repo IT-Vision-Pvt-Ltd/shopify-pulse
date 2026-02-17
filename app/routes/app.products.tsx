@@ -179,3 +179,9 @@ export default function ProductIntelligence() {
             </BlockStack>
           </Card>
         </InlineGrid>
+          </BlockStack>
+        </Layout.Section>
+      </Layout>
+    </Page>
+  );
+}
