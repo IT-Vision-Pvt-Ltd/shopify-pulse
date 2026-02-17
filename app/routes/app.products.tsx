@@ -6,7 +6,7 @@ import type { LoaderFunctionArgs } from '@remix-run/node';
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin } = await authenticate.admin(request);
-
+  
   const response = await admin.graphql(`{
     products(first: 50, sortKey: BEST_SELLING, reverse: true) {
       edges {
@@ -19,166 +19,172 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           totalInventory
           tracksInventory
           createdAt
-          priceRangeV2 {
-            minVariantPrice { amount currencyCode }
-            maxVariantPrice { amount currencyCode }
-          }
-          variants(first: 10) {
+          variants(first: 5) {
             edges {
               node {
-                id
-                title
-                price
                 inventoryQuantity
-                sku
+                price
               }
             }
           }
         }
       }
     }
-    orders(first: 100, sortKey: CREATED_AT, reverse: true) {
-      edges {
-        node {
-          lineItems(first: 20) {
-            edges {
-              node {
-                title
-                quantity
-                product { id }
-                originalTotalSet { shopMoney { amount } }
-              }
-            }
-          }
-        }
-      }
-    }
+    shop { currencyCode }
   }`);
-
+  
   const data = await response.json();
-  const products = data.data?.products?.edges?.map((e: any) => e.node) || [];
-  const orders = data.data?.orders?.edges?.map((e: any) => e.node) || [];
-
-  // Calculate product sales from orders
-  const productSales: Record<string, { units: number; revenue: number }> = {};
-  orders.forEach((order: any) => {
-    order.lineItems?.edges?.forEach((item: any) => {
-      const productId = item.node.product?.id;
-      if (productId) {
-        if (!productSales[productId]) productSales[productId] = { units: 0, revenue: 0 };
-        productSales[productId].units += item.node.quantity;
-        productSales[productId].revenue += parseFloat(item.node.originalTotalSet?.shopMoney?.amount || '0');
-      }
-    });
-  });
-
-  // Enrich products with sales data
-  const enrichedProducts = products.map((p: any) => {
-    const sales = productSales[p.id] || { units: 0, revenue: 0 };
-    const price = parseFloat(p.priceRangeV2?.minVariantPrice?.amount || '0');
-    return {
-      id: p.id,
-      title: p.title,
-      type: p.productType || 'Uncategorized',
-      vendor: p.vendor,
-      status: p.status,
-      inventory: p.totalInventory,
-      price,
-      unitsSold: sales.units,
-      revenue: sales.revenue,
-      variants: p.variants?.edges?.map((v: any) => v.node) || [],
-      createdAt: p.createdAt,
-    };
-  });
-
-  // Sort for various views
-  const topByRevenue = [...enrichedProducts].sort((a, b) => b.revenue - a.revenue).slice(0, 10);
-  const topByUnits = [...enrichedProducts].sort((a, b) => b.unitsSold - a.unitsSold).slice(0, 10);
-  const lowInventory = enrichedProducts.filter((p: any) => p.inventory < 10 && p.inventory > 0).slice(0, 10);
-  const outOfStock = enrichedProducts.filter((p: any) => p.inventory === 0);
-  const deadStock = enrichedProducts.filter((p: any) => p.unitsSold === 0 && p.inventory > 0).slice(0, 10);
-
-  // Product types breakdown
-  const typeBreakdown: Record<string, { count: number; revenue: number }> = {};
-  enrichedProducts.forEach((p: any) => {
-    if (!typeBreakdown[p.type]) typeBreakdown[p.type] = { count: 0, revenue: 0 };
-    typeBreakdown[p.type].count++;
-    typeBreakdown[p.type].revenue += p.revenue;
-  });
-
-  // KPIs
-  const totalProducts = enrichedProducts.length;
-  const totalRevenue = enrichedProducts.reduce((sum: number, p: any) => sum + p.revenue, 0);
-  const totalUnitsSold = enrichedProducts.reduce((sum: number, p: any) => sum + p.unitsSold, 0);
-  const avgPrice = enrichedProducts.length > 0 ? enrichedProducts.reduce((sum: number, p: any) => sum + p.price, 0) / enrichedProducts.length : 0;
-  const currency = products[0]?.priceRangeV2?.minVariantPrice?.currencyCode || 'USD';
-
-  return json({
-    kpis: { totalProducts, totalRevenue, totalUnitsSold, avgPrice, currency, outOfStockCount: outOfStock.length, lowInventoryCount: lowInventory.length },
-    topByRevenue,
-    topByUnits,
-    lowInventory,
-    deadStock,
-    typeBreakdown,
-  });
+  return json({ products: data.data.products.edges, currency: data.data.shop.currencyCode });
 };
 
-export default function ProductIntelligence() {
-  const { kpis, topByRevenue, topByUnits, lowInventory, deadStock, typeBreakdown } = useLoaderData<typeof loader>();
-
-  const formatCurrency = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: kpis.currency }).format(val);
-  const maxRevenue = Math.max(...topByRevenue.map((p: any) => p.revenue), 1);
-  const maxUnits = Math.max(...topByUnits.map((p: any) => p.unitsSold), 1);
-
+export default function Products() {
+  const { products, currency } = useLoaderData<typeof loader>();
+  
+  const formatCurrency = (amount: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
+  
+  // Calculate KPIs
+  const totalProducts = products.length;
+  const activeProducts = products.filter((p: any) => p.node.status === 'ACTIVE').length;
+  const lowInventoryProducts = products.filter((p: any) => p.node.tracksInventory && p.node.totalInventory < 10 && p.node.totalInventory > 0);
+  const outOfStockProducts = products.filter((p: any) => p.node.tracksInventory && p.node.totalInventory === 0);
+  
+  const avgPrice = products.reduce((sum: number, p: any) => {
+    const price = parseFloat(p.node.variants.edges[0]?.node.price || 0);
+    return sum + price;
+  }, 0) / (totalProducts || 1);
+  
+  const totalInventory = products.reduce((sum: number, p: any) => sum + (p.node.totalInventory || 0), 0);
+  
+  // Products by type
+  const productsByType = products.reduce((acc: any, p: any) => {
+    const type = p.node.productType || 'Uncategorized';
+    acc[type] = (acc[type] || 0) + 1;
+    return acc;
+  }, {});
+  
+  // Products by vendor
+  const productsByVendor = products.reduce((acc: any, p: any) => {
+    const vendor = p.node.vendor || 'Unknown';
+    acc[vendor] = (acc[vendor] || 0) + 1;
+    return acc;
+  }, {});
+  
+  const topVendors = Object.entries(productsByVendor).sort((a: any, b: any) => b[1] - a[1]).slice(0, 5);
+  
   return (
-    <Page title="Product Intelligence">
-      <BlockStack gap="600">
-
-        {/* ROW 1: Product KPIs */}
-        <InlineGrid columns={{ xs: 1, sm: 2, md: 4, lg: 6 }} gap="400">
-          <Card>
-            <BlockStack gap="200">
-              <Text as="p" variant="bodySm" tone="subdued">Total Products</Text>
-              <Text as="p" variant="headingLg">{kpis.totalProducts}</Text>
-              <Badge tone="info">Active SKUs</Badge>
-            </BlockStack>
-          </Card>
-          <Card>
-            <BlockStack gap="200">
-              <Text as="p" variant="bodySm" tone="subdued">Product Revenue</Text>
-              <Text as="p" variant="headingLg">{formatCurrency(kpis.totalRevenue)}</Text>
-              <Text as="span" variant="bodySm" tone="subdued">From orders</Text>
-            </BlockStack>
-          </Card>
-          <Card>
-            <BlockStack gap="200">
-              <Text as="p" variant="bodySm" tone="subdued">Units Sold</Text>
-              <Text as="p" variant="headingLg">{kpis.totalUnitsSold}</Text>
-              <Badge tone="success">Total quantity</Badge>
-            </BlockStack>
-          </Card>
-          <Card>
-            <BlockStack gap="200">
-              <Text as="p" variant="bodySm" tone="subdued">Avg Price</Text>
-              <Text as="p" variant="headingLg">{formatCurrency(kpis.avgPrice)}</Text>
-              <Text as="span" variant="bodySm" tone="subdued">Per product</Text>
-            </BlockStack>
-          </Card>
-          <Card>
-            <BlockStack gap="200">
-              <Text as="p" variant="bodySm" tone="subdued">Out of Stock</Text>
-              <Text as="p" variant="headingLg">{kpis.outOfStockCount}</Text>
-              <Badge tone="critical">Needs restock</Badge>
-            </BlockStack>
-          </Card>
-          <Card>
-            <BlockStack gap="200">
-              <Text as="p" variant="bodySm" tone="subdued">Low Inventory</Text>
-              <Text as="p" variant="headingLg">{kpis.lowInventoryCount}</Text>
-              <Badge tone="warning">Below 10 units</Badge>
-            </BlockStack>
-          </Card>
-        </InlineGrid>
+    <Page title="Products Dashboard" subtitle="Monitor your product catalog and inventory">
+      <Layout>
+        <Layout.Section>
+          <BlockStack gap="400">
+            <InlineGrid columns={4} gap="400">
+              <Box padding="400" background="bg-surface" borderRadius="200" shadow="100">
+                <BlockStack gap="200">
+                  <Text as="span" variant="bodySm" tone="subdued">Total Products</Text>
+                  <Text as="span" variant="headingXl" fontWeight="bold">{totalProducts}</Text>
+                  <Badge tone="success">{activeProducts} Active</Badge>
+                </BlockStack>
+              </Box>
+              <Box padding="400" background="bg-surface" borderRadius="200" shadow="100">
+                <BlockStack gap="200">
+                  <Text as="span" variant="bodySm" tone="subdued">Total Inventory</Text>
+                  <Text as="span" variant="headingXl" fontWeight="bold">{totalInventory.toLocaleString()}</Text>
+                  <Text as="span" variant="bodySm" tone="subdued">units in stock</Text>
+                </BlockStack>
+              </Box>
+              <Box padding="400" background="bg-surface" borderRadius="200" shadow="100">
+                <BlockStack gap="200">
+                  <Text as="span" variant="bodySm" tone="subdued">Avg Price</Text>
+                  <Text as="span" variant="headingXl" fontWeight="bold">{formatCurrency(avgPrice)}</Text>
+                  <Text as="span" variant="bodySm" tone="subdued">Per product</Text>
+                </BlockStack>
+              </Box>
+              <Box padding="400" background="bg-surface" borderRadius="200" shadow="100">
+                <BlockStack gap="200">
+                  <Text as="span" variant="bodySm" tone="subdued">Inventory Alerts</Text>
+                  <InlineStack gap="100">
+                    <Badge tone="warning">{lowInventoryProducts.length} Low</Badge>
+                    <Badge tone="critical">{outOfStockProducts.length} Out</Badge>
+                  </InlineStack>
+                </BlockStack>
+              </Box>
+            </InlineGrid>
+            
+            <InlineStack gap="400">
+              <Card>
+                <BlockStack gap="300">
+                  <Text as="h2" variant="headingMd">Products by Vendor</Text>
+                  <BlockStack gap="200">
+                    {topVendors.map(([vendor, count]: [string, any]) => (
+                      <BlockStack key={vendor} gap="100">
+                        <InlineStack align="space-between">
+                          <Text as="span">{vendor}</Text>
+                          <Text as="span" fontWeight="semibold">{count}</Text>
+                        </InlineStack>
+                        <ProgressBar progress={(count / totalProducts) * 100} size="small" tone="primary" />
+                      </BlockStack>
+                    ))}
+                  </BlockStack>
+                </BlockStack>
+              </Card>
+              <Card>
+                <BlockStack gap="300">
+                  <Text as="h2" variant="headingMd">Products by Type</Text>
+                  <BlockStack gap="200">
+                    {Object.entries(productsByType).slice(0, 5).map(([type, count]: [string, any]) => (
+                      <InlineStack key={type} align="space-between">
+                        <Text as="span">{type}</Text>
+                        <Badge>{count}</Badge>
+                      </InlineStack>
+                    ))}
+                  </BlockStack>
+                </BlockStack>
+              </Card>
+            </InlineStack>
+            
+            <Card>
+              <BlockStack gap="400">
+                <Text as="h2" variant="headingMd">Low Inventory Products</Text>
+                <Divider />
+                {lowInventoryProducts.length > 0 ? (
+                  <BlockStack gap="200">
+                    {lowInventoryProducts.slice(0, 10).map((product: any) => (
+                      <Box key={product.node.id} padding="300" background="bg-surface-warning" borderRadius="200">
+                        <InlineStack align="space-between">
+                          <Text as="span" fontWeight="semibold">{product.node.title}</Text>
+                          <Badge tone="warning">{product.node.totalInventory} left</Badge>
+                        </InlineStack>
+                      </Box>
+                    ))}
+                  </BlockStack>
+                ) : (
+                  <Text as="p" tone="subdued">No low inventory products</Text>
+                )}
+              </BlockStack>
+            </Card>
+            
+            <InlineGrid columns={2} gap="400">
+              <Card>
+                <BlockStack gap="200">
+                  <Text as="p" variant="bodySm" tone="subdued">Avg Price</Text>
+                  <Text as="p" variant="headingLg">{formatCurrency(avgPrice)}</Text>
+                  <Text as="span" variant="bodySm" tone="subdued">Per product</Text>
+                </BlockStack>
+              </Card>
+              <Card>
+                <BlockStack gap="200">
+                  <Text as="p" variant="bodySm" tone="subdued">Out of Stock</Text>
+                  <Text as="p" variant="headingLg">{outOfStockProducts.length}</Text>
+                  <Badge tone="critical">Needs restock</Badge>
+                </BlockStack>
+              </Card>
+              <Card>
+                <BlockStack gap="200">
+                  <Text as="p" variant="bodySm" tone="subdued">Low Inventory</Text>
+                  <Text as="p" variant="headingLg">{lowInventoryProducts.length}</Text>
+                  <Badge tone="warning">Below 10 units</Badge>
+                </BlockStack>
+              </Card>
+            </InlineGrid>
           </BlockStack>
         </Layout.Section>
       </Layout>
