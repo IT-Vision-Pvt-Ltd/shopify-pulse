@@ -14,9 +14,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function App() {
   const { apiKey } = useLoaderData<typeof loader>();
 
-      return (
-<Outlet />
+  return (
+    <Outlet />
   );
+}
+
 // Shopify embedded app best practice: Error boundaries
 export function ErrorBoundary() {
   return boundary.error(useRouteError());
