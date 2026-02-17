@@ -18,6 +18,9 @@ import {
 } from '@shopify/polaris';
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
+cat app/routes/app.tsx | grep -A 20 'return ('
+echo 'export default function() { return <h1>TEST DASHBOARD WORKS!</h1>; }' > app/routes/app/_index.tsx
+git add -A && git commit -m 'test: Absolute minimal H1 test' && git push
   const { admin } = await authenticate.admin(request);
 
   const response = await admin.graphql(`
