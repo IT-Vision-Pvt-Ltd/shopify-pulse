@@ -1,3 +1,5 @@
+wc -l app/routes/app/_index.tsx
+clear && git add app/routes/app/_index.tsx && git commit -m 'fix: Correct _index.tsx structure - proper loader and component export' && git push origin main
 import { useLoaderData } from '@remix-run/react';
 import { json, type LoaderFunctionArgs } from '@remix-run/node';
 import { authenticate } from '../../shopify.server';
@@ -64,6 +66,184 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const data = await response.json();
   const shop = data.data.shop;
   const orders = data.data.orders.edges || [];
+cat > app/routes/app/_index.tsx << 'DASHBOARD_END'
+import { useLoaderData } from '@remix-run/react';
+import type { LoaderFunctionArgs } from '@remix-run/node';
+import { json } from '@remix-run/node';
+import { authenticate } from '../../../shopify.server';
+import {
+  Page,
+  Layout,
+  Card,
+  BlockStack,
+  InlineStack,
+  Text,
+  InlineGrid,
+  Banner,
+  Badge,
+  ProgressBar,
+  Divider,
+} from '@shopify/polaris';
+
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const { admin } = await authenticate.admin(request);
+
+  const response = await admin.graphql(`
+    query {
+      shop {
+        name
+        currencyCode
+      }
+      orders(first: 50, reverse: true) {
+        edges {
+          node {
+            id
+            totalPriceSet {
+              shopMoney {
+                amount
+              }
+            }
+            createdAt
+            lineItems(first: 50) {
+              edges {
+                node {
+                  quantity
+                }
+              }
+            }
+          }
+        }
+      }
+      products(first: 50) {
+        edges {
+          node {
+            id
+          }
+        }
+      }
+      customers(first: 50) {
+        edges {
+          node {
+            id
+          }
+        }
+      }
+    }
+  `);
+
+  const data = await response.json();
+  const shop = data.data.shop;
+  const orders = data.data.orders.edges || [];
+  const products = data.data.products.edges || [];
+  const customers = data.data.customers.edges || [];
+
+  const totalRevenue = orders.reduce(
+    (sum: number, { node }: any) => sum + parseFloat(node.totalPriceSet.shopMoney.amount),
+    0
+  );
+  const totalOrders = orders.length;
+  const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+  const totalItems = orders.reduce(
+    (sum: number, { node }: any) =>
+      sum + node.lineItems.edges.reduce((s: number, { node: item }: any) => s + item.quantity, 0),
+    0
+  );
+
+  return json({
+    shop,
+    totalRevenue,
+    totalOrders,
+    avgOrderValue,
+    totalItems,
+    totalProducts: products.length,
+    totalCustomers: customers.length,
+  });
+};
+
+export default function Dashboard() {
+  const data = useLoaderData<typeof loader>();
+
+  return (
+    <Page>
+      <Layout>
+        <Layout.Section>
+          <BlockStack gap="400">
+            <Banner tone="info">
+              <Text as="p" fontWeight="semibold">📊 Dashboard Overview</Text>
+              <Text as="p" tone="subdued">Real-time insights for {data.shop.name}</Text>
+            </Banner>
+
+            <InlineGrid columns={4} gap="400">
+              <Card>
+                <BlockStack gap="200">
+                  <Text as="p" fontWeight="semibold">💰 Total Revenue</Text>
+                  <Text as="p">${data.totalRevenue.toFixed(2)} {data.shop.currencyCode}</Text>
+                  <ProgressBar progress={75} tone="success" />
+                  <Text as="p" tone="subdued" variant="bodySm">Revenue performance</Text>
+                </BlockStack>
+              </Card>
+
+              <Card>
+                <BlockStack gap="200">
+                  <Text as="p" fontWeight="semibold">🛍️ Total Orders</Text>
+                  <Text as="p">{data.totalOrders} orders</Text>
+                  <ProgressBar progress={60} tone="primary" />
+                  <Text as="p" tone="subdued" variant="bodySm">Active orders tracked</Text>
+                </BlockStack>
+              </Card>
+
+              <Card>
+                <BlockStack gap="200">
+                  <Text as="p" fontWeight="semibold">📦 Product Catalog</Text>
+                  <Text as="p">{data.totalProducts} products</Text>
+                  <ProgressBar progress={80} tone="info" />
+                  <Text as="p" tone="subdued" variant="bodySm">Active products in store</Text>
+                </BlockStack>
+              </Card>
+
+              <Card>
+                <BlockStack gap="200">
+                  <Text as="p" fontWeight="semibold">👥 Customer Base</Text>
+                  <Text as="p">{data.totalCustomers} customers</Text>
+                  <ProgressBar progress={70} tone="warning" />
+                  <Text as="p" tone="subdued" variant="bodySm">Growing customer community</Text>
+                </BlockStack>
+              </Card>
+            </InlineGrid>
+
+            <Divider />
+
+            <Card>
+              <BlockStack gap="400">
+                <InlineStack align="space-between">
+                  <Text as="h2" variant="headingMd">Performance Metrics</Text>
+                  <Badge tone="success">Live Data</Badge>
+                </InlineStack>
+
+                <Divider />
+
+                <InlineGrid columns={2} gap="400">
+                  <BlockStack gap="200">
+                    <Text as="p" fontWeight="semibold">Avg Order Value</Text>
+                    <Text as="p">${data.avgOrderValue.toFixed(2)}</Text>
+                    <ProgressBar progress={65} tone="success" />
+                  </BlockStack>
+
+                  <BlockStack gap="200">
+                    <Text as="p" fontWeight="semibold">Total Items Sold</Text>
+                    <Text as="p">{data.totalItems} items</Text>
+                    <ProgressBar progress={55} tone="primary" />
+                  </BlockStack>
+                </InlineGrid>
+              </BlockStack>
+            </Card>
+          </BlockStack>
+        </Layout.Section>
+      </Layout>
+    </Page>
+  );
+}
+DASHBOARD_END
   const products = data.data.products.edges || [];
   const customers = data.data.customers.edges || [];
 
