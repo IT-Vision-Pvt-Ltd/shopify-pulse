@@ -7,6 +7,7 @@ import RevenueByHourChart from "../../components/dashboard/RevenueByHourChart";
 import WeeklyScorecard from "../../components/dashboard/WeeklyScorecard";
 import YoYRevenueChart from "../../components/dashboard/YoYRevenueChart";
 import AlertsFeed from "../../components/dashboard/AlertsFeed";
+import { TrafficSourcesChart } from "../../components/dashboard/TrafficSourcesChart";
 import RevenueGoalChart from "../../components/dashboard/RevenueGoalChart";
 import { ChartVerticalIcon, OrderIcon, ProductIcon, PersonIcon, AlertCircleIcon, TrendingUpIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../../shopify.server";
@@ -221,7 +222,13 @@ export default function Dashboard() {
               </BlockStack>
             </Card>
           </Layout.Section>
-        </Layout>
+        
+
+      {/* Row 4: Traffic Sources Chart - Test Component */}
+      <Layout.Section>
+        <TrafficSourcesChart />
+      </Layout.Section>
+    </Layout>
 
         {/* Quick Navigation */}
         <Card>
