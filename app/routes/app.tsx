@@ -1,6 +1,11 @@
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
-import { Link, Outlet, useLoaderData } from "@remix-run/react";
+import { Link, Outlet, useLoaderData, useRouteError } from "@remix-run/react";
+import { boundary } from "@shopify/shopify-app-remix/server";
+import { AppProvider } from "@shopify/shopify-app-remix/react";
 import { authenticate } from "../shopify.server";
+import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
+
+export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);
@@ -8,19 +13,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export default function App() {
+  const { apiKey } = useLoaderData<typeof loader>();
+
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <nav style={{ width: '200px', borderRight: '1px solid #ccc', padding: '20px' }}>
-        <ul style={{ listStyle: 'none', padding: 0 }}>
-          <li><Link to="/app">Dashboard</Link></li>
-          <li><Link to="/app/analytics">Analytics</Link></li>
-          <li><Link to="/app/orders">Orders</Link></li>
-          <li><Link to="/app/products">Products</Link></li>
-        </ul>
-      </nav>
-      <main style={{ flex: 1, padding: '20px' }}>
-        <Outlet />
-      </main>
-    </div>
+    <AppProvider isEmbeddedApp apiKey={apiKey}>
+      <Outlet />
+    </AppProvider>
   );
+}
+
+// Shopify embedded app best practice: Error boundaries
+export function ErrorBoundary() {
+  return boundary.error(useRouteError());
 }
