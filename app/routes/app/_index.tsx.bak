@@ -222,6 +222,12 @@ export default function Dashboard() {
               </BlockStack>
             </Card>
           </Layout.Section>
+        
+
+      {/* Row 4: Traffic Sources Chart - Test Component */}
+      <Layout.Section>
+        <TrafficSourcesChart />
+      </Layout.Section>
     </Layout>
 
         {/* Quick Navigation */}
