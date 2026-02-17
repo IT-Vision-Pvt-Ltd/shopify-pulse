@@ -32,7 +32,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       edges {
         node {
           numberOfOrders
-          totalSpentV2 { amount }
+          amountSpent { amount }
           createdAt
           updatedAt
         }
@@ -59,7 +59,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   
   // Customer insights
   const avgOrdersPerCustomer = customers.length > 0 ? customers.reduce((sum: number, c: any) => sum + (c.node.numberOfOrders || 0), 0) / customers.length : 0;
-  const avgCustomerSpend = customers.length > 0 ? customers.reduce((sum: number, c: any) => sum + parseFloat(c.node.totalSpentV2?.amount || 0), 0) / customers.length : 0;
+  const avgCustomerSpend = customers.length > 0 ? customers.reduce((sum: number, c: any) => sum + parseFloat(c.node.amountSpent?.amount || 0), 0) / customers.length : 0;
   
   // Generate insights array
   const insights = [];

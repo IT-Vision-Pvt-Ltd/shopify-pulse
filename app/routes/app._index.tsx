@@ -32,7 +32,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       edges {
         node {
           numberOfOrders
-          totalSpentV2 { amount }
+          amountSpent { amount }
           createdAt
         }
       }

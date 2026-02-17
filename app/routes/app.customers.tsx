@@ -18,7 +18,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           createdAt
           updatedAt
           numberOfOrders
-          totalSpentV2 { amount currencyCode }
+          amountSpent { amount currencyCode }
           averageOrderAmountV2 { amount currencyCode }
           tags
           addresses(first: 1) { city country }
@@ -43,7 +43,7 @@ export default function Customers() {
   
   // Calculate metrics
   const totalCustomers = customers.length;
-  const totalRevenue = customers.reduce((sum: number, c: any) => sum + parseFloat(c.node.totalSpentV2?.amount || 0), 0);
+  const totalRevenue = customers.reduce((sum: number, c: any) => sum + parseFloat(c.node.amountSpent?.amount || 0), 0);
   const avgLifetimeValue = totalCustomers > 0 ? totalRevenue / totalCustomers : 0;
   const repeatCustomers = customers.filter((c: any) => (c.node.numberOfOrders || 0) > 1).length;
   const newCustomers = customers.filter((c: any) => {
@@ -53,7 +53,7 @@ export default function Customers() {
   }).length;
   
   // Customer segments
-  const vipCustomers = customers.filter((c: any) => parseFloat(c.node.totalSpentV2?.amount || 0) > 500);
+  const vipCustomers = customers.filter((c: any) => parseFloat(c.node.amountSpent?.amount || 0) > 500);
   const atRiskCustomers = customers.filter((c: any) => {
     const updated = new Date(c.node.updatedAt);
     const ninetyDaysAgo = new Date(); ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
@@ -72,7 +72,7 @@ export default function Customers() {
   
   // Top customers by spend
   const topCustomers = [...customers]
-    .sort((a: any, b: any) => parseFloat(b.node.totalSpentV2?.amount || 0) - parseFloat(a.node.totalSpentV2?.amount || 0))
+    .sort((a: any, b: any) => parseFloat(b.node.amountSpent?.amount || 0) - parseFloat(a.node.amountSpent?.amount || 0))
     .slice(0, 10);
   
   return (
@@ -189,7 +189,7 @@ export default function Customers() {
                         </InlineStack>
                         <BlockStack gap="100" inlineAlign="end">
                           <Text as="span" variant="headingMd" fontWeight="bold">
-                            {formatCurrency(parseFloat(customer.node.totalSpentV2?.amount || 0))}
+                            {formatCurrency(parseFloat(customer.node.amountSpent?.amount || 0))}
                           </Text>
                           <Text as="span" variant="bodySm" tone="subdued">lifetime</Text>
                         </BlockStack>
