@@ -1,8 +1,5 @@
-import { json } from "@remix-run/node";
-import type { LoaderFunctionArgs } from "@remix-run/node";
+import { json, type LoaderFunctionArgs } from "@remix-run/node";
 import { Link, Outlet, useLoaderData } from "@remix-run/react";
-import { AppProvider } from "@shopify/shopify-app-remix/react";
-import { NavMenu } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -11,21 +8,19 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export default function App() {
-  const { apiKey } = useLoaderData<typeof loader>();
   return (
-    <AppProvider isEmbeddedApp apiKey={apiKey}>
-      <NavMenu>
-        <Link to="/app" rel="home">Dashboard</Link>
-        <Link to="/app/analytics">Sales & Revenue</Link>
-        <Link to="/app/orders">Orders</Link>
-        <Link to="/app/products">Products</Link>
-        <Link to="/app/customers">Customers</Link>
-        <Link to="/app/ai-insights">AI Insights</Link>
-        <Link to="/app/alerts">Alerts</Link>
-        <Link to="/app/billing">Billing</Link>
-        <Link to="/app/settings">Settings</Link>
-      </NavMenu>
-      <Outlet />
-    </AppProvider>
+    <div style={{ display: 'flex', minHeight: '100vh' }}>
+      <nav style={{ width: '200px', borderRight: '1px solid #ccc', padding: '20px' }}>
+        <ul style={{ listStyle: 'none', padding: 0 }}>
+          <li><Link to="/app">Dashboard</Link></li>
+          <li><Link to="/app/analytics">Analytics</Link></li>
+          <li><Link to="/app/orders">Orders</Link></li>
+          <li><Link to="/app/products">Products</Link></li>
+        </ul>
+      </nav>
+      <main style={{ flex: 1, padding: '20px' }}>
+        <Outlet />
+      </main>
+    </div>
   );
 }
