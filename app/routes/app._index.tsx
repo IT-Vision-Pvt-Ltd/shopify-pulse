@@ -18,7 +18,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         }
       }
     }
-    products(first: 50, sortKey: BEST_SELLING, reverse: true) {
+    products(first: 50, sortKey: CREATED_AT, reverse: true) {
       edges {
         node {
           title
