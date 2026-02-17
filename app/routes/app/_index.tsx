@@ -3,6 +3,11 @@ import { json } from "@remix-run/node";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData, Link } from "@remix-run/react";
 import { Page, Layout, Card, BlockStack, InlineStack, Text, Box, Badge, Icon, Divider, Grid, Button, Banner } from "@shopify/polaris";
+import RevenueByHourChart from "../../components/dashboard/RevenueByHourChart";
+import WeeklyScorecard from "../../components/dashboard/WeeklyScorecard";
+import YoYRevenueChart from "../../components/dashboard/YoYRevenueChart";
+import AlertsFeed from "../../components/dashboard/AlertsFeed";
+import RevenueGoalChart from "../../components/dashboard/RevenueGoalChart";
 import { ChartVerticalIcon, OrderIcon, ProductIcon, PersonIcon, AlertCircleIcon, TrendingUpIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../../shopify.server";
 
