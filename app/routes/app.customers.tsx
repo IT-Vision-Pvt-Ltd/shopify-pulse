@@ -17,7 +17,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           phone
           createdAt
           updatedAt
-          ordersCount
+          numberOfOrders
           totalSpentV2 { amount currencyCode }
           averageOrderAmountV2 { amount currencyCode }
           tags
@@ -45,7 +45,7 @@ export default function Customers() {
   const totalCustomers = customers.length;
   const totalRevenue = customers.reduce((sum: number, c: any) => sum + parseFloat(c.node.totalSpentV2?.amount || 0), 0);
   const avgLifetimeValue = totalCustomers > 0 ? totalRevenue / totalCustomers : 0;
-  const repeatCustomers = customers.filter((c: any) => (c.node.ordersCount || 0) > 1).length;
+  const repeatCustomers = customers.filter((c: any) => (c.node.numberOfOrders || 0) > 1).length;
   const newCustomers = customers.filter((c: any) => {
     const created = new Date(c.node.createdAt);
     const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -57,7 +57,7 @@ export default function Customers() {
   const atRiskCustomers = customers.filter((c: any) => {
     const updated = new Date(c.node.updatedAt);
     const ninetyDaysAgo = new Date(); ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-    return updated < ninetyDaysAgo && (c.node.ordersCount || 0) > 0;
+    return updated < ninetyDaysAgo && (c.node.numberOfOrders || 0) > 0;
   });
   
   // Customers by location
@@ -183,7 +183,7 @@ export default function Customers() {
                               {customer.node.displayName || 'Guest Customer'}
                             </Text>
                             <Text as="span" variant="bodySm" tone="subdued">
-                              {customer.node.email} • {customer.node.ordersCount || 0} orders
+                              {customer.node.email} • {customer.node.numberOfOrders || 0} orders
                             </Text>
                           </BlockStack>
                         </InlineStack>

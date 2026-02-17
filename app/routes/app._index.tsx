@@ -31,7 +31,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     customers(first: 50, sortKey: UPDATED_AT, reverse: true) {
       edges {
         node {
-          ordersCount
+          numberOfOrders
           totalSpentV2 { amount }
           createdAt
         }

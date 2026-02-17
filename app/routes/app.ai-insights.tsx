@@ -31,7 +31,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     customers(first: 50, sortKey: UPDATED_AT, reverse: true) {
       edges {
         node {
-          ordersCount
+          numberOfOrders
           totalSpentV2 { amount }
           createdAt
           updatedAt
@@ -58,7 +58,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const outOfStockProducts = products.filter((p: any) => p.node.tracksInventory && p.node.totalInventory === 0);
   
   // Customer insights
-  const avgOrdersPerCustomer = customers.length > 0 ? customers.reduce((sum: number, c: any) => sum + (c.node.ordersCount || 0), 0) / customers.length : 0;
+  const avgOrdersPerCustomer = customers.length > 0 ? customers.reduce((sum: number, c: any) => sum + (c.node.numberOfOrders || 0), 0) / customers.length : 0;
   const avgCustomerSpend = customers.length > 0 ? customers.reduce((sum: number, c: any) => sum + parseFloat(c.node.totalSpentV2?.amount || 0), 0) / customers.length : 0;
   
   // Generate insights array
