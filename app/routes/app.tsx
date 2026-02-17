@@ -1,6 +1,7 @@
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
 import { Link, Outlet, useLoaderData, useRouteError } from "@remix-run/react";
 import { boundary } from "@shopify/shopify-app-remix/server";
+import { AppProvider } from "@shopify/shopify-app-remix/react";
 import { authenticate } from "../shopify.server";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 
@@ -15,7 +16,9 @@ export default function App() {
   const { apiKey } = useLoaderData<typeof loader>();
 
   return (
-    <Outlet />
+    <AppProvider isEmbeddedApp={false} apiKey={apiKey}>
+      <Outlet />
+    </AppProvider>
   );
 }
 
