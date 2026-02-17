@@ -21,6 +21,11 @@ import {
   MagicIcon,
 } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
+import { RevenueByHourChart } from '../../components/dashboard/RevenueByHourChart';
+import { WeeklyScorecard } from '../../components/dashboard/WeeklyScorecard';
+import { YoYRevenueChart } from '../../components/dashboard/YoYRevenueChart';
+import { AlertsFeed } from '../../components/dashboard/AlertsFeed';
+import { RevenueGoalChart } from '../../components/dashboard/RevenueGoalChart';
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin } = await authenticate.admin(request);
@@ -250,10 +255,9 @@ export default function Dashboard() {
                 <Box minHeight="300px" background="bg-surface-secondary" borderRadius="200" padding="400">
                   <BlockStack gap="200" align="center">
                     <Text as="p" tone="subdued">
-                      Chart visualization would go here
                     </Text>
                     <Text as="p" variant="bodySm" tone="subdued">
-                      (Recharts or similar library integration)
+                      
                     </Text>
                   </BlockStack>
                 </Box>
