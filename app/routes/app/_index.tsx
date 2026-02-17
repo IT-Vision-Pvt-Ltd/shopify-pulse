@@ -3,7 +3,7 @@ import { json } from "@remix-run/node";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData, Link } from "@remix-run/react";
 import { Page, Layout, Card, BlockStack, InlineStack, Text, Box, Badge, Icon, Divider, Grid, Button, Banner } from "@shopify/polaris";
-import { ChartVerticalIcon, OrderIcon, ProductIcon, PersonIcon, AlertCircleIcon, TrendingUpIcon } from "@shopify/polaris-icons";
+import { ChartVerticalIcon, OrderIcon, ProductIcon, PersonIcon, AlertCircleIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -71,7 +71,7 @@ export default function Dashboard() {
   const kpiCards = [
     { title: "Total Revenue", value: fmt(analytics.totalRevenue), change: "+12.5%", positive: true, icon: ChartVerticalIcon },
     { title: "Total Orders", value: analytics.totalOrders.toString(), change: "+8.2%", positive: true, icon: OrderIcon },
-    { title: "Avg Order Value", value: fmt(analytics.avgOrderValue), change: "+3.1%", positive: true, icon: TrendingUpIcon },
+    { title: "Avg Order Value", value: fmt(analytics.avgOrderValue), change: "+3.1%", positive: true, icon: ChartVerticalIcon },
     { title: "Total Products", value: topProducts.length.toString(), change: "0%", positive: true, icon: ProductIcon },
     { title: "Total Customers", value: recentCustomers.length.toString(), change: "+5.7%", positive: true, icon: PersonIcon },
   ];
@@ -204,7 +204,7 @@ export default function Dashboard() {
                 { label: "Products", to: "/app/products", icon: ProductIcon },
                 { label: "Customers", to: "/app/customers", icon: PersonIcon },
                 { label: "AI Insights", to: "/app/ai-insights", icon: AlertCircleIcon },
-                { label: "Settings", to: "/app/settings", icon: TrendingUpIcon },
+                { label: "Settings", to: "/app/settings", icon: ChartVerticalIcon },
               ].map((nav, i) => (
                 <Link key={i} to={nav.to} style={{ textDecoration: "none" }}>
                   <Card>
