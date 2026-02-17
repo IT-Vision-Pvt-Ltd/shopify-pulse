@@ -15,7 +15,7 @@ export default function App() {
   const { apiKey } = useLoaderData<typeof loader>();
 
   return (
-      <Outlet  );
+      <Outlet  /;
 }
 
 // Shopify embedded app best practice: Error boundaries
