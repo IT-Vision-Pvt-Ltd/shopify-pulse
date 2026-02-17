@@ -1,11 +1,11 @@
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
-import { Link, Outlet, useLoaderData, useRouteError, useLocation } from "@remix-run/react";
+import { Link, Outlet, useLoaderData, useRouteError, useLocation, useSearchParams } from "@remix-run/react";
 import { boundary } from "@shopify/shopify-app-remix/server";
 import { AppProvider } from "@shopify/shopify-app-remix/react";
 import { authenticate } from "../shopify.server";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 import { Frame, Navigation, TopBar } from "@shopify/polaris";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   HomeIcon,
   OrderIcon,
@@ -29,6 +29,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function App() {
   const { apiKey } = useLoaderData<typeof loader>();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const [mobileNavigationActive, setMobileNavigationActive] = useState(false);
 
   const toggleMobileNavigationActive = useCallback(
@@ -36,34 +37,42 @@ export default function App() {
     [],
   );
 
+  const qs = useMemo(() => {
+    const params = new URLSearchParams();
+    if (searchParams.get("shop")) params.set("shop", searchParams.get("shop")!);
+    if (searchParams.get("host")) params.set("host", searchParams.get("host")!);
+    const str = params.toString();
+    return str ? `?${str}` : "";
+  }, [searchParams]);
+
   const navigationMarkup = (
     <Navigation location={location.pathname}>
       <Navigation.Section
         title="Dashboard"
         items={[
           {
-            url: "/app",
+            url: `/app${qs}`,
             label: "Overview",
             icon: HomeIcon,
             matchPaths: ["/app"],
           },
           {
-            url: "/app/analytics",
+            url: `/app/analytics${qs}`,
             label: "Analytics",
             icon: ChartVerticalFilledIcon,
           },
           {
-            url: "/app/orders",
+            url: `/app/orders${qs}`,
             label: "Orders",
             icon: OrderIcon,
           },
           {
-            url: "/app/products",
+            url: `/app/products${qs}`,
             label: "Products",
             icon: ProductIcon,
           },
           {
-            url: "/app/customers",
+            url: `/app/customers${qs}`,
             label: "Customers",
             icon: PersonIcon,
           },
@@ -73,17 +82,17 @@ export default function App() {
         title="Intelligence"
         items={[
           {
-            url: "/app/ai-insights",
+            url: `/app/ai-insights${qs}`,
             label: "AI Insights",
             icon: WandIcon,
           },
           {
-            url: "/app/alerts",
+            url: `/app/alerts${qs}`,
             label: "Alerts",
             icon: AlertCircleIcon,
           },
           {
-            url: "/app/reports",
+            url: `/app/reports${qs}`,
             label: "Reports",
             icon: FileIcon,
           },
@@ -93,12 +102,12 @@ export default function App() {
         title="Settings"
         items={[
           {
-            url: "/app/billing",
+            url: `/app/billing${qs}`,
             label: "Billing",
             icon: BillIcon,
           },
           {
-            url: "/app/settings",
+            url: `/app/settings${qs}`,
             label: "Settings",
             icon: SettingsIcon,
           },
@@ -128,7 +137,6 @@ export default function App() {
   );
 }
 
-// Shopify embedded app best practice: Error boundaries
 export function ErrorBoundary() {
   return boundary.error(useRouteError());
 }
