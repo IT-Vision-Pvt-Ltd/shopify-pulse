@@ -2,7 +2,7 @@ import { json, type LoaderFunctionArgs } from "@remix-run/node";
 import { Link, Outlet, useLoaderData, useRouteError, useLocation } from "@remix-run/react";
 import { boundary } from "@shopify/shopify-app-remix/server";
 import { AppProvider } from "@shopify/shopify-app-remix/react";
-import { authenticate } from "../shopify.server";
+import { authenticate } from "../../shopify.server";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 import { Frame, Navigation, TopBar } from "@shopify/polaris";
 import { useState, useCallback } from "react";
