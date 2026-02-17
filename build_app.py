@@ -1,4 +1,15 @@
-import { useState } from 'react';
+import os
+
+def write_file(path, content):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w') as f:
+        f.write(content)
+    print(f'Written: {path}')
+
+# ============================================================
+# 1. app.tsx - Main layout with full 15-page navigation
+# ============================================================
+write_file('app/routes/app.tsx', r"""import { useState } from 'react';
 import { json } from '@remix-run/node';
 import { Outlet, useLoaderData, useLocation, useSearchParams } from '@remix-run/react';
 import { AppProvider } from '@shopify/shopify-app-remix/react';
@@ -16,7 +27,7 @@ import {
   CashDollarIcon,
   RefreshIcon,
   ViewIcon,
-  ExperimentIcon,
+  FlaskIcon,
   StarIcon,
   SettingsIcon,
 } from '@shopify/polaris-icons';
@@ -54,7 +65,7 @@ export default function App() {
           { url: '/app/financials' + qs, label: 'Financials', icon: CashDollarIcon },
           { url: '/app/subscriptions' + qs, label: 'Subscriptions', icon: RefreshIcon },
           { url: '/app/competitive' + qs, label: 'Competitive Intel', icon: ViewIcon },
-          { url: '/app/abtesting' + qs, label: 'A/B Testing', icon: ExperimentIcon },
+          { url: '/app/abtesting' + qs, label: 'A/B Testing', icon: FlaskIcon },
         ]}
       />
       <Navigation.Section
@@ -103,3 +114,6 @@ export function ErrorBoundary() {
     </div>
   );
 }
+""")
+
+print('\napp.tsx generated successfully!')
