@@ -1,18 +1,14 @@
-
 import { json } from "@remix-run/node";
 import type { LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData, Link } from "@remix-run/react";
-import { Page, Layout, Card, BlockStack, InlineStack, Text, Box, Badge, Icon, Divider, Grid, Button, Banner } from "@shopify/polaris";
-import { ChartVerticalIcon, OrderIcon, ProductIcon, PersonIcon, AlertCircleIcon, ChartVerticalFilledIcon } from "@shopify/polaris-icons";
+import { useLoaderData } from "@remix-run/react";
+import { Page, Layout, Card, Text, BlockStack, InlineGrid, Box, Badge, Icon, InlineStack, Divider } from "@shopify/polaris";
 import { authenticate } from "../../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { admin, session } = await authenticate.admin(request);
+  const { admin } = await authenticate.admin(request);
 
   const shopResponse = await admin.graphql(`
-    query {
-      shop { name email myshopifyDomain plan { displayName } }
-    }
+    query { shop { name email myshopifyDomain plan { displayName } } }
   `);
   const shopData = await shopResponse.json();
 
@@ -23,7 +19,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           node {
             id name createdAt totalPriceSet { shopMoney { amount currencyCode } }
             displayFinancialStatus displayFulfillmentStatus
-            lineItems(first: 5) { edges { node { title quantity } } }
           }
         }
       }
@@ -38,186 +33,119 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const currency = orders[0]?.totalPriceSet?.shopMoney?.currencyCode || "USD";
 
   const productsResponse = await admin.graphql(`
-    query { products(first: 10, sortKey: CREATED_AT, reverse: true) { edges { node { id title status totalInventory priceRangeV2 { minVariantPrice { amount } } } } } }
+    query { products(first: 10, sortKey: CREATED_AT, reverse: true) { edges { node { id title status totalInventory } } } }
   `);
   const productsData = await productsResponse.json();
   const products = productsData.data.products.edges.map((e: any) => e.node);
 
   const customersResponse = await admin.graphql(`
-    query { customers(first: 10, sortKey: CREATED_AT, reverse: true) { edges { node { id displayName email ordersCount totalSpentV2 { amount currencyCode } createdAt } } } }
+    query { customers(first: 10, sortKey: CREATED_AT, reverse: true) { edges { node { id displayName email ordersCount totalSpentV2 { amount currencyCode } } } } }
   `);
   const customersData = await customersResponse.json();
   const customers = customersData.data.customers.edges.map((e: any) => e.node);
 
-  const dailyRevenue: Record<string, number> = {};
-  orders.forEach((o: any) => {
-    const day = o.createdAt.split("T")[0];
-    dailyRevenue[day] = (dailyRevenue[day] || 0) + parseFloat(o.totalPriceSet.shopMoney.amount);
-  });
-
   return json({
     shop: shopData.data.shop,
-    analytics: { totalRevenue, totalOrders, avgOrderValue, currency, dailyRevenue },
-    recentOrders: orders.slice(0, 10),
-    topProducts: products,
-    recentCustomers: customers,
+    totalRevenue,
+    totalOrders,
+    avgOrderValue,
+    currency,
+    recentOrders: orders.slice(0, 5),
+    products: products.slice(0, 5),
+    customers: customers.slice(0, 5),
   });
 };
 
 export default function Dashboard() {
-  const { shop, analytics, recentOrders, topProducts, recentCustomers } = useLoaderData<typeof loader>();
-  const fmt = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: analytics.currency }).format(n);
-
-  const kpiCards = [
-    { title: "Total Revenue", value: fmt(analytics.totalRevenue), change: "+12.5%", positive: true, icon: ChartVerticalIcon },
-    { title: "Total Orders", value: analytics.totalOrders.toString(), change: "+8.2%", positive: true, icon: OrderIcon },
-    { title: "Avg Order Value", value: fmt(analytics.avgOrderValue), change: "+3.1%", positive: true, icon: ChartVerticalFilledIcon },
-    { title: "Total Products", value: topProducts.length.toString(), change: "0%", positive: true, icon: ProductIcon },
-    { title: "Total Customers", value: recentCustomers.length.toString(), change: "+5.7%", positive: true, icon: PersonIcon },
-  ];
-
-  const dailyData = Object.entries(analytics.dailyRevenue).sort(([a], [b]) => a.localeCompare(b)).slice(-14);
-  const maxRev = Math.max(...dailyData.map(([, v]) => v as number), 1);
+  const { shop, totalRevenue, totalOrders, avgOrderValue, currency, recentOrders, products, customers } = useLoaderData<typeof loader>();
 
   return (
-    <Page title="GrowthPilot AI Dashboard">
+    <Page title="Dashboard" subtitle={`Welcome back, ${shop.name}`}>
       <BlockStack gap="500">
-        <Banner title={`Welcome back, ${shop.name}!`} tone="info">
-          <p>Your store analytics overview. Navigate using the sidebar to explore detailed dashboards.</p>
-        </Banner>
-
-        {/* KPI Cards */}
-        <InlineStack gap="400" wrap={true}>
-          {kpiCards.map((kpi, i) => (
-            <div key={i} style={{ flex: "1 1 180px", minWidth: 180 }}>
-              <Card>
-                <BlockStack gap="200">
-                  <InlineStack align="space-between">
-                    <Text as="p" variant="bodySm" tone="subdued">{kpi.title}</Text>
-                    <Icon source={kpi.icon} />
-                  </InlineStack>
-                  <Text as="p" variant="headingLg" fontWeight="bold">{kpi.value}</Text>
-                  <Badge tone={kpi.positive ? "success" : "critical"}>{kpi.change}</Badge>
-                </BlockStack>
-              </Card>
-            </div>
-          ))}
-        </InlineStack>
-
-        {/* Revenue Chart - CSS Bar Chart */}
-        <Card>
-          <BlockStack gap="400">
-            <Text as="h2" variant="headingMd">Revenue Trend (Last 14 Days)</Text>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 200, padding: "0 8px" }}>
-              {dailyData.map(([day, rev], i) => {
-                const height = ((rev as number) / maxRev) * 180;
-                return (
-                  <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
-                    <Text as="p" variant="bodySm">{fmt(rev as number)}</Text>
-                    <div style={{ width: "100%", height, backgroundColor: "var(--p-color-bg-fill-success)", borderRadius: 4, minHeight: 4 }} />
-                    <Text as="p" variant="bodySm" tone="subdued">{day.slice(5)}</Text>
-                  </div>
-                );
-              })}
-            </div>
-          </BlockStack>
-        </Card>
+        <InlineGrid columns={{ xs: 1, sm: 2, md: 4 }} gap="400">
+          <Card>
+            <BlockStack gap="200">
+              <Text as="h3" variant="headingSm">Total Revenue</Text>
+              <Text as="p" variant="headingLg">{currency} {totalRevenue.toFixed(2)}</Text>
+              <Badge tone="success">Last 50 orders</Badge>
+            </BlockStack>
+          </Card>
+          <Card>
+            <BlockStack gap="200">
+              <Text as="h3" variant="headingSm">Total Orders</Text>
+              <Text as="p" variant="headingLg">{totalOrders}</Text>
+              <Badge tone="info">Recent activity</Badge>
+            </BlockStack>
+          </Card>
+          <Card>
+            <BlockStack gap="200">
+              <Text as="h3" variant="headingSm">Avg Order Value</Text>
+              <Text as="p" variant="headingLg">{currency} {avgOrderValue.toFixed(2)}</Text>
+              <Badge tone="attention">Per order</Badge>
+            </BlockStack>
+          </Card>
+          <Card>
+            <BlockStack gap="200">
+              <Text as="h3" variant="headingSm">Store Plan</Text>
+              <Text as="p" variant="headingLg">{shop.plan?.displayName || "N/A"}</Text>
+              <Badge>{shop.myshopifyDomain}</Badge>
+            </BlockStack>
+          </Card>
+        </InlineGrid>
 
         <Layout>
-          <Layout.Section variant="oneHalf">
-            {/* Recent Orders */}
+          <Layout.Section>
             <Card>
-              <BlockStack gap="300">
-                <InlineStack align="space-between">
-                  <Text as="h2" variant="headingMd">Recent Orders</Text>
-                  <Link to="/app/orders"><Button variant="plain">View All</Button></Link>
-                </InlineStack>
+              <BlockStack gap="400">
+                <Text as="h2" variant="headingMd">Recent Orders</Text>
                 <Divider />
-                {recentOrders.map((order: any, i: number) => (
-                  <div key={i}>
-                    <InlineStack align="space-between">
-                      <BlockStack gap="100">
-                        <Text as="p" variant="bodyMd" fontWeight="semibold">{order.name}</Text>
-                        <Text as="p" variant="bodySm" tone="subdued">
-                          {new Date(order.createdAt).toLocaleDateString()}
-                        </Text>
-                      </BlockStack>
-                      <BlockStack gap="100">
-                        <Text as="p" variant="bodyMd" alignment="end">
-                          {fmt(parseFloat(order.totalPriceSet.shopMoney.amount))}
-                        </Text>
-                        <Badge tone={order.displayFinancialStatus === "PAID" ? "success" : "warning"}>
-                          {order.displayFinancialStatus}
-                        </Badge>
-                      </BlockStack>
+                {recentOrders.map((order: any) => (
+                  <InlineStack key={order.id} align="space-between" blockAlign="center">
+                    <BlockStack gap="100">
+                      <Text as="span" variant="bodyMd" fontWeight="semibold">{order.name}</Text>
+                      <Text as="span" variant="bodySm" tone="subdued">{new Date(order.createdAt).toLocaleDateString()}</Text>
+                    </BlockStack>
+                    <InlineStack gap="200">
+                      <Badge tone={order.displayFinancialStatus === "PAID" ? "success" : "warning"}>{order.displayFinancialStatus}</Badge>
+                      <Text as="span" variant="bodyMd">{currency} {parseFloat(order.totalPriceSet.shopMoney.amount).toFixed(2)}</Text>
                     </InlineStack>
-                    {i < recentOrders.length - 1 && <Divider />}
-                  </div>
+                  </InlineStack>
                 ))}
               </BlockStack>
             </Card>
           </Layout.Section>
-
-          <Layout.Section variant="oneHalf">
-            {/* Top Products */}
+          <Layout.Section variant="oneThird">
             <Card>
-              <BlockStack gap="300">
-                <InlineStack align="space-between">
-                  <Text as="h2" variant="headingMd">Top Products</Text>
-                  <Link to="/app/products"><Button variant="plain">View All</Button></Link>
-                </InlineStack>
+              <BlockStack gap="400">
+                <Text as="h2" variant="headingMd">Top Products</Text>
                 <Divider />
-                {topProducts.map((product: any, i: number) => (
-                  <div key={i}>
-                    <InlineStack align="space-between">
-                      <BlockStack gap="100">
-                        <Text as="p" variant="bodyMd" fontWeight="semibold">{product.title}</Text>
-                        <Text as="p" variant="bodySm" tone="subdued">
-                          Inventory: {product.totalInventory}
-                        </Text>
-                      </BlockStack>
-                      <BlockStack gap="100">
-                        <Text as="p" variant="bodyMd" alignment="end">
-                          {fmt(parseFloat(product.priceRangeV2.minVariantPrice.amount))}
-                        </Text>
-                        <Badge tone={product.status === "ACTIVE" ? "success" : "warning"}>
-                          {product.status}
-                        </Badge>
-                      </BlockStack>
-                    </InlineStack>
-                    {i < topProducts.length - 1 && <Divider />}
-                  </div>
+                {products.map((product: any) => (
+                  <InlineStack key={product.id} align="space-between" blockAlign="center">
+                    <Text as="span" variant="bodyMd">{product.title}</Text>
+                    <Badge>{product.totalInventory} in stock</Badge>
+                  </InlineStack>
                 ))}
               </BlockStack>
             </Card>
+            <Box paddingBlockStart="400">
+              <Card>
+                <BlockStack gap="400">
+                  <Text as="h2" variant="headingMd">Recent Customers</Text>
+                  <Divider />
+                  {customers.map((customer: any) => (
+                    <InlineStack key={customer.id} align="space-between" blockAlign="center">
+                      <BlockStack gap="100">
+                        <Text as="span" variant="bodyMd">{customer.displayName}</Text>
+                        <Text as="span" variant="bodySm" tone="subdued">{customer.email}</Text>
+                      </BlockStack>
+                      <Text as="span" variant="bodyMd">{customer.totalSpentV2?.amount ? `${currency} ${parseFloat(customer.totalSpentV2.amount).toFixed(2)}` : "$0.00"}</Text>
+                    </InlineStack>
+                  ))}
+                </BlockStack>
+              </Card>
+            </Box>
           </Layout.Section>
         </Layout>
-
-        {/* Quick Navigation */}
-        <Card>
-          <BlockStack gap="300">
-            <Text as="h2" variant="headingMd">Quick Navigation</Text>
-            <InlineStack gap="300" wrap={true}>
-              {[
-                { label: "Sales & Revenue", to: "/app/analytics", icon: ChartVerticalIcon },
-                { label: "Orders", to: "/app/orders", icon: OrderIcon },
-                { label: "Products", to: "/app/products", icon: ProductIcon },
-                { label: "Customers", to: "/app/customers", icon: PersonIcon },
-                { label: "AI Insights", to: "/app/ai-insights", icon: AlertCircleIcon },
-                { label: "Settings", to: "/app/settings", icon: ChartVerticalFilledIcon },
-              ].map((nav, i) => (
-                <Link key={i} to={nav.to} style={{ textDecoration: "none" }}>
-                  <Card>
-                    <InlineStack gap="200" blockAlign="center">
-                      <Icon source={nav.icon} />
-                      <Text as="p" variant="bodyMd">{nav.label}</Text>
-                    </InlineStack>
-                  </Card>
-                </Link>
-              ))}
-            </InlineStack>
-          </BlockStack>
-        </Card>
       </BlockStack>
     </Page>
   );
