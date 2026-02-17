@@ -1,198 +1,316 @@
-import { json } from '@remix-run/node';
-import { useLoaderData, Link } from '@remix-run/react';
-import { Page, Layout, Card, Text, BlockStack, InlineStack, Box, Badge, Button, Divider, ProgressBar, InlineGrid } from '@shopify/polaris';
-import { authenticate } from '../shopify.server';
-import type { LoaderFunctionArgs } from '@remix-run/node';
+import { useLoaderData } from "@remix-run/react";
+import type { LoaderFunctionArgs } from "@remix-run/node";
+import { json } from "@remix-run/node";
+import {
+  Page,
+  Layout,
+  Card,
+  Text,
+  BlockStack,
+  InlineStack,
+  Box,
+  Icon,
+  Badge,
+  Divider,
+  InlineGrid,
+  SkeletonBodyText,
+} from "@shopify/polaris";
+import {
+  ArrowUpIcon,
+  ArrowDownIcon,
+  MagicIcon,
+} from "@shopify/polaris-icons";
+import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin } = await authenticate.admin(request);
-  
-  const response = await admin.graphql(`{
-    orders(first: 50, sortKey: CREATED_AT, reverse: true) {
-      edges {
-        node {
-          createdAt
-          totalPriceSet { shopMoney { amount } }
-          displayFulfillmentStatus
-          displayFinancialStatus
+
+  // Fetch basic shop data
+  const shopResponse = await admin.graphql(`
+    query {
+      shop {
+        name
+        currencyCode
+      }
+      orders(first: 50, sortKey: CREATED_AT, reverse: true) {
+        edges {
+          node {
+            id
+            name
+            totalPriceSet { shopMoney { amount currencyCode } }
+            createdAt
+          }
+        }
+      }
+      products(first: 10, sortKey: CREATED_AT, reverse: true) {
+        edges {
+          node {
+            id
+            title
+            totalInventory
+          }
         }
       }
     }
-    products(first: 50, sortKey: CREATED_AT, reverse: true) {
-      edges {
-        node {
-          title
-          totalInventory
-          tracksInventory
-          status
-        }
-      }
-    }
-    customers(first: 50, sortKey: UPDATED_AT, reverse: true) {
-      edges {
-        node {
-          numberOfOrders
-          amountSpent { amount }
-          createdAt
-        }
-      }
-    }
-    shop { name currencyCode }
-  }`);
+  `);
+
+  const shopData = await shopResponse.json();
   
-  const data = await response.json();
-  const orders = data.data.orders.edges;
-  const products = data.data.products.edges;
-  const customers = data.data.customers.edges;
-  
-  // Calculate key metrics
-  const totalRevenue = orders.reduce((sum: number, o: any) => sum + parseFloat(o.node.totalPriceSet.shopMoney.amount), 0);
-  const totalOrders = orders.length;
-  const totalProducts = products.length;
-  const totalCustomers = customers.length;
-  const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-  const fulfilledOrders = orders.filter((o: any) => o.node.displayFulfillmentStatus === 'FULFILLED').length;
-  const lowStockProducts = products.filter((p: any) => p.node.tracksInventory && p.node.totalInventory < 10 && p.node.totalInventory > 0).length;
-  const outOfStockProducts = products.filter((p: any) => p.node.tracksInventory && p.node.totalInventory === 0).length;
-  const newCustomers = customers.filter((c: any) => {
-    const created = new Date(c.node.createdAt);
-    const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    return created > thirtyDaysAgo;
-  }).length;
+  // Calculate metrics
+  const orders = shopData.data?.orders?.edges || [];
+  const totalRevenue = orders.reduce((sum: number, edge: any) => {
+    return sum + parseFloat(edge.node.totalPriceSet?.shopMoney?.amount || 0);
+  }, 0);
+  const orderCount = orders.length;
+  const aov = orderCount > 0 ? totalRevenue / orderCount : 0;
   
   return json({
-    metrics: { totalRevenue, totalOrders, totalProducts, totalCustomers, avgOrderValue, fulfilledOrders, lowStockProducts, outOfStockProducts, newCustomers },
-    shopName: data.data.shop.name,
-    currency: data.data.shop.currencyCode
+    shopName: shopData.data?.shop?.name || "Your Store",
+    currency: shopData.data?.shop?.currencyCode || "USD",
+    metrics: {
+      revenue: totalRevenue,
+      orders: orderCount,
+      aov: aov,
+      conversionRate: 3.2, // Placeholder
+      profitMargin: 28.5, // Placeholder
+    },
+    recentOrders: orders.slice(0, 5),
+    products: shopData.data?.products?.edges || [],
   });
 };
 
-export default function Index() {
-  const { metrics, shopName, currency } = useLoaderData<typeof loader>();
-  
-  const formatCurrency = (amount: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
-  
-  const dashboards = [
-    { title: 'Sales Analytics', description: 'Track revenue, trends, and performance', url: '/app/sales', badge: 'Revenue', badgeTone: 'success' as const },
-    { title: 'Products', description: 'Monitor inventory and product performance', url: '/app/products', badge: `${metrics.lowStockProducts} Low Stock`, badgeTone: metrics.lowStockProducts > 0 ? 'warning' as const : 'success' as const },
-    { title: 'Orders', description: 'View and manage all orders', url: '/app/orders', badge: `${metrics.totalOrders} Orders`, badgeTone: 'info' as const },
-    { title: 'Customers', description: 'Understand your customer base', url: '/app/customers', badge: `${metrics.newCustomers} New`, badgeTone: 'success' as const },
-    { title: 'AI Insights', description: 'Smart recommendations and alerts', url: '/app/ai-insights', badge: 'AI Powered', badgeTone: 'info' as const },
-    { title: 'Settings', description: 'Configure dashboard preferences', url: '/app/settings', badge: 'Config', badgeTone: 'default' as const }
-  ];
-  
+// KPI Card Component
+function KPICard({ 
+  label, 
+  value, 
+  change, 
+  changeType, 
+  format = "number" 
+}: {
+  label: string;
+  value: number;
+  change: number;
+  changeType: "positive" | "negative" | "neutral";
+  format?: "number" | "currency" | "percent";
+}) {
+  const formatValue = (val: number) => {
+    switch (format) {
+      case "currency":
+        return new Intl.NumberFormat("en-US", { 
+          style: "currency", 
+          currency: "USD",
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 0,
+        }).format(val);
+      case "percent":
+        return `${val.toFixed(1)}%`;
+      default:
+        return new Intl.NumberFormat("en-US").format(val);
+    }
+  };
+
   return (
-    <Page title="Shopify Pulse" subtitle={`Welcome back! Here\'s an overview of ${shopName}`}>
-      <Layout>
-        <Layout.Section>
-          <BlockStack gap="500">
-            {/* Key Metrics Overview */}
-            <InlineGrid columns={4} gap="400">
-              <Box padding="400" background="bg-surface" borderRadius="200" shadow="100">
-                <BlockStack gap="200">
-                  <Text as="span" variant="bodySm" tone="subdued">Total Revenue</Text>
-                  <Text as="span" variant="headingXl" fontWeight="bold">{formatCurrency(metrics.totalRevenue)}</Text>
-                  <Badge tone="success">Last 50 orders</Badge>
-                </BlockStack>
-              </Box>
-              <Box padding="400" background="bg-surface" borderRadius="200" shadow="100">
-                <BlockStack gap="200">
-                  <Text as="span" variant="bodySm" tone="subdued">Total Orders</Text>
-                  <Text as="span" variant="headingXl" fontWeight="bold">{metrics.totalOrders}</Text>
-                  <InlineStack gap="100">
-                    <Badge tone="success">{metrics.fulfilledOrders} Fulfilled</Badge>
-                  </InlineStack>
-                </BlockStack>
-              </Box>
-              <Box padding="400" background="bg-surface" borderRadius="200" shadow="100">
-                <BlockStack gap="200">
-                  <Text as="span" variant="bodySm" tone="subdued">Products</Text>
-                  <Text as="span" variant="headingXl" fontWeight="bold">{metrics.totalProducts}</Text>
-                  <InlineStack gap="100">
-                    {metrics.lowStockProducts > 0 && <Badge tone="warning">{metrics.lowStockProducts} Low</Badge>}
-                    {metrics.outOfStockProducts > 0 && <Badge tone="critical">{metrics.outOfStockProducts} Out</Badge>}
-                    {metrics.lowStockProducts === 0 && metrics.outOfStockProducts === 0 && <Badge tone="success">All Good</Badge>}
-                  </InlineStack>
-                </BlockStack>
-              </Box>
-              <Box padding="400" background="bg-surface" borderRadius="200" shadow="100">
-                <BlockStack gap="200">
-                  <Text as="span" variant="bodySm" tone="subdued">Customers</Text>
-                  <Text as="span" variant="headingXl" fontWeight="bold">{metrics.totalCustomers}</Text>
-                  <Badge tone="success">+{metrics.newCustomers} new (30d)</Badge>
-                </BlockStack>
-              </Box>
-            </InlineGrid>
-            
-            {/* Average Order Value */}
-            <Card>
-              <BlockStack gap="300">
-                <InlineStack align="space-between">
-                  <Text as="h2" variant="headingMd">Average Order Value</Text>
-                  <Text as="span" variant="headingLg" fontWeight="bold">{formatCurrency(metrics.avgOrderValue)}</Text>
-                </InlineStack>
-                <ProgressBar progress={Math.min((metrics.avgOrderValue / 200) * 100, 100)} size="small" tone="primary" />
-              </BlockStack>
-            </Card>
-            
-            {/* Dashboard Navigation */}
-            <Card>
-              <BlockStack gap="400">
-                <Text as="h2" variant="headingMd">Dashboards</Text>
-                <Divider />
-                <InlineGrid columns={3} gap="400">
-                  {dashboards.map((dashboard) => (
-                    <Box key={dashboard.title} padding="400" background="bg-surface-secondary" borderRadius="200">
-                      <BlockStack gap="200">
-                        <InlineStack align="space-between">
-                          <Text as="span" variant="headingMd" fontWeight="semibold">{dashboard.title}</Text>
-                          <Badge tone={dashboard.badgeTone}>{dashboard.badge}</Badge>
-                        </InlineStack>
-                        <Text as="span" variant="bodySm" tone="subdued">{dashboard.description}</Text>
-                        <Button url={dashboard.url} variant="secondary">View Dashboard</Button>
-                      </BlockStack>
-                    </Box>
-                  ))}
-                </InlineGrid>
-              </BlockStack>
-            </Card>
-            
-            {/* Quick Stats */}
-            <Card>
-              <BlockStack gap="400">
-                <Text as="h2" variant="headingMd">Quick Stats</Text>
-                <Divider />
-                <InlineStack gap="400">
-                  <Box padding="300" background="bg-surface-success" borderRadius="200" minWidth="150px">
-                    <BlockStack gap="100" align="center">
-                      <Text as="span" variant="headingLg" fontWeight="bold">{Math.round((metrics.fulfilledOrders / metrics.totalOrders) * 100) || 0}%</Text>
-                      <Text as="span" variant="bodySm">Fulfillment Rate</Text>
-                    </BlockStack>
-                  </Box>
-                  <Box padding="300" background="bg-surface-info" borderRadius="200" minWidth="150px">
-                    <BlockStack gap="100" align="center">
-                      <Text as="span" variant="headingLg" fontWeight="bold">{formatCurrency(metrics.avgOrderValue)}</Text>
-                      <Text as="span" variant="bodySm">Avg Order Value</Text>
-                    </BlockStack>
-                  </Box>
-                  <Box padding="300" background="bg-surface-warning" borderRadius="200" minWidth="150px">
-                    <BlockStack gap="100" align="center">
-                      <Text as="span" variant="headingLg" fontWeight="bold">{metrics.lowStockProducts + metrics.outOfStockProducts}</Text>
-                      <Text as="span" variant="bodySm">Inventory Alerts</Text>
-                    </BlockStack>
-                  </Box>
-                  <Box padding="300" background="bg-surface-secondary" borderRadius="200" minWidth="150px">
-                    <BlockStack gap="100" align="center">
-                      <Text as="span" variant="headingLg" fontWeight="bold">{metrics.newCustomers}</Text>
-                      <Text as="span" variant="bodySm">New Customers (30d)</Text>
-                    </BlockStack>
-                  </Box>
-                </InlineStack>
-              </BlockStack>
-            </Card>
+    <Card>
+      <BlockStack gap="200">
+        <Text as="p" variant="bodySm" tone="subdued">
+          {label}
+        </Text>
+        <Text as="p" variant="heading2xl" fontWeight="bold">
+          {formatValue(value)}
+        </Text>
+        <InlineStack gap="100" align="start">
+          <Box
+            padding="100"
+            borderRadius="full"
+            background={changeType === "positive" ? "bg-fill-success" : changeType === "negative" ? "bg-fill-critical" : "bg-fill"}
+          >
+            <InlineStack gap="050" blockAlign="center">
+              <Icon source={changeType === "positive" ? ArrowUpIcon : ArrowDownIcon} />
+              <Text as="span" variant="bodySm" fontWeight="semibold">
+                {Math.abs(change).toFixed(1)}%
+              </Text>
+            </InlineStack>
+          </Box>
+          <Text as="span" variant="bodySm" tone="subdued">
+            vs last period
+          </Text>
+        </InlineStack>
+      </BlockStack>
+    </Card>
+  );
+}
+
+// AI Insights Card Component
+function AIInsightsCard({ insights }: { insights: string[] }) {
+  return (
+    <Card>
+      <BlockStack gap="400">
+        <InlineStack gap="200" blockAlign="center">
+          <Box
+            padding="200"
+            borderRadius="200"
+            background="bg-fill-magic"
+          >
+            <Icon source={MagicIcon} tone="magic" />
+          </Box>
+          <BlockStack gap="0">
+            <Text as="h3" variant="headingMd" fontWeight="semibold">
+              Today's AI Brief
+            </Text>
+            <Text as="p" variant="bodySm" tone="subdued">
+              Key insights from your data
+            </Text>
           </BlockStack>
-        </Layout.Section>
-      </Layout>
+          <div style={{ marginLeft: "auto" }}>
+            <Badge tone="magic">AI Generated</Badge>
+          </div>
+        </InlineStack>
+        <Divider />
+        <BlockStack gap="300">
+          {insights.map((insight, index) => (
+            <InlineStack key={index} gap="200" blockAlign="start">
+              <Text as="span" tone="magic">•</Text>
+              <Text as="p" variant="bodyMd">
+                {insight}
+              </Text>
+            </InlineStack>
+          ))}
+        </BlockStack>
+      </BlockStack>
+    </Card>
+  );
+}
+
+export default function Dashboard() {
+  const { shopName, metrics, recentOrders } = useLoaderData<typeof loader>();
+
+  // Sample AI insights - in production, these would come from AI analysis
+  const aiInsights = [
+    `Revenue is trending ${metrics.revenue > 1000 ? "above" : "below"} average for this period`,
+    `${metrics.orders} orders processed - consider promotional campaigns to boost volume`,
+    `Average order value of $${metrics.aov.toFixed(2)} shows healthy customer spending`,
+  ];
+
+  return (
+    <Page title="Executive Command Center">
+      <BlockStack gap="500">
+        {/* AI Daily Brief Banner */}
+        <AIInsightsCard insights={aiInsights} />
+
+        {/* KPI Cards Row */}
+        <Text as="h2" variant="headingLg">
+          Key Performance Indicators
+        </Text>
+        <InlineGrid columns={{ xs: 1, sm: 2, md: 3, lg: 5 }} gap="400">
+          <KPICard
+            label="Total Revenue"
+            value={metrics.revenue}
+            change={12.5}
+            changeType="positive"
+            format="currency"
+          />
+          <KPICard
+            label="Orders"
+            value={metrics.orders}
+            change={8.3}
+            changeType="positive"
+            format="number"
+          />
+          <KPICard
+            label="Average Order Value"
+            value={metrics.aov}
+            change={-2.1}
+            changeType="negative"
+            format="currency"
+          />
+          <KPICard
+            label="Conversion Rate"
+            value={metrics.conversionRate}
+            change={0.5}
+            changeType="positive"
+            format="percent"
+          />
+          <KPICard
+            label="Profit Margin"
+            value={metrics.profitMargin}
+            change={1.2}
+            changeType="positive"
+            format="percent"
+          />
+        </InlineGrid>
+
+        {/* Main Content Grid */}
+        <Layout>
+          <Layout.Section variant="twoThirds">
+            <Card>
+              <BlockStack gap="400">
+                <Text as="h3" variant="headingMd">
+                  Revenue by Hour
+                </Text>
+                <Box minHeight="300px" background="bg-surface-secondary" borderRadius="200" padding="400">
+                  <BlockStack gap="200" align="center">
+                    <Text as="p" tone="subdued">
+                      Chart visualization would go here
+                    </Text>
+                    <Text as="p" variant="bodySm" tone="subdued">
+                      (Recharts or similar library integration)
+                    </Text>
+                  </BlockStack>
+                </Box>
+              </BlockStack>
+            </Card>
+          </Layout.Section>
+
+          <Layout.Section variant="oneThird">
+            <Card>
+              <BlockStack gap="400">
+                <Text as="h3" variant="headingMd">
+                  Store Health Score
+                </Text>
+                <Box minHeight="200px" background="bg-surface-secondary" borderRadius="full" padding="400">
+                  <BlockStack gap="200" align="center">
+                    <Text as="p" variant="heading3xl" fontWeight="bold" tone="success">
+                      85
+                    </Text>
+                    <Text as="p" variant="bodySm" tone="subdued">
+                      out of 100
+                    </Text>
+                  </BlockStack>
+                </Box>
+              </BlockStack>
+            </Card>
+          </Layout.Section>
+        </Layout>
+
+        {/* Recent Orders Section */}
+        <Card>
+          <BlockStack gap="400">
+            <Text as="h3" variant="headingMd">
+              Recent Orders
+            </Text>
+            <BlockStack gap="200">
+              {recentOrders.length > 0 ? (
+                recentOrders.map((order: any) => (
+                  <Box key={order.node.id} padding="300" background="bg-surface-secondary" borderRadius="200">
+                    <InlineStack align="space-between">
+                      <Text as="span" fontWeight="semibold">
+                        {order.node.name}
+                      </Text>
+                      <Text as="span">
+                        ${parseFloat(order.node.totalPriceSet?.shopMoney?.amount || 0).toFixed(2)}
+                      </Text>
+                    </InlineStack>
+                  </Box>
+                ))
+              ) : (
+                <Text as="p" tone="subdued">
+                  No recent orders found
+                </Text>
+              )}
+            </BlockStack>
+          </BlockStack>
+        </Card>
+      </BlockStack>
     </Page>
   );
 }

@@ -1,0 +1,188 @@
+
+/* ShopifyPulse Design System - Based on UI/UX Document */
+/* Color Palette */
+:root {
+  /* Light Mode Colors */
+  --color-background: #F6F6F7;
+  --color-surface: #FFFFFF;
+  --color-primary: #5C6AC4;
+  --color-positive: #22C55E;
+  --color-negative: #EF4444;
+  --color-warning: #F59E0B;
+  --color-ai-accent: #8B5CF6;
+  --color-text-primary: #1F2937;
+  --color-text-secondary: #6B7280;
+  
+  /* Spacing */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  
+  /* Border Radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+/* Dark Mode */
+[data-theme="dark"] {
+  --color-background: #1A1A2E;
+  --color-surface: #16213E;
+  --color-primary: #7C83DB;
+  --color-positive: #34D399;
+  --color-negative: #F87171;
+  --color-warning: #FBBF24;
+  --color-ai-accent: #A78BFA;
+  --color-text-primary: #E5E7EB;
+  --color-text-secondary: #9CA3AF;
+}
+
+/* Typography - Inter font */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
+body {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background-color: var(--color-background);
+  color: var(--color-text-primary);
+  margin: 0;
+  padding: 0;
+}
+
+/* KPI Card Styles */
+.kpi-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-lg);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.kpi-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.kpi-card__label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-sm);
+}
+
+.kpi-card__value {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1.2;
+}
+
+.kpi-card__change {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  margin-top: var(--spacing-sm);
+  padding: 4px 8px;
+  border-radius: 9999px;
+}
+
+.kpi-card__change--positive {
+  background: rgba(34, 197, 94, 0.1);
+  color: var(--color-positive);
+}
+
+.kpi-card__change--negative {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-negative);
+}
+
+/* Chart Container */
+.chart-container {
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.chart-container__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-md);
+}
+
+/* AI Insights Card */
+.ai-insight-card {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%);
+  border-left: 4px solid var(--color-ai-accent);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-lg);
+}
+
+.ai-insight-card__icon {
+  color: var(--color-ai-accent);
+}
+
+/* Dashboard Grid */
+.dashboard-grid {
+  display: grid;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
+}
+
+.dashboard-grid--kpis {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.dashboard-grid--charts {
+  grid-template-columns: repeat(12, 1fr);
+}
+
+/* Page Layout */
+.page-wrapper {
+  min-height: 100vh;
+  background: var(--color-background);
+}
+
+.page-header {
+  padding: var(--spacing-lg);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.page-header__title {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.page-content {
+  padding: var(--spacing-lg);
+}
+
+/* Section Headers */
+.section-header {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-md);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .dashboard-grid--kpis {
+    grid-template-columns: 1fr;
+  }
+  
+  .kpi-card__value {
+    font-size: 24px;
+  }
+}
