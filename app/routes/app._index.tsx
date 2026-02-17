@@ -26,6 +26,9 @@ import { WeeklyScorecard } from '../../components/dashboard/WeeklyScorecard';
 import { YoYRevenueChart } from '../../components/dashboard/YoYRevenueChart';
 import { AlertsFeed } from '../../components/dashboard/AlertsFeed';
 import { RevenueGoalChart } from '../../components/dashboard/RevenueGoalChart';
+import { ConversionFunnelChart } from "../components/dashboard/ConversionFunnelChart";
+import { StoreHealthScore } from "../components/dashboard/StoreHealthScore";
+import { SalesHeatmap } from "../components/dashboard/SalesHeatmap";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin } = await authenticate.admin(request);
@@ -314,7 +317,24 @@ export default function Dashboard() {
             </BlockStack>
           </BlockStack>
         </Card>
-      </BlockStack>
+      
+          <Grid>
+              {/* Conversion Funnel */}
+              <Grid.Cell columnSpan={{xs: 6, sm: 6, md: 6, lg: 6, xl: 6}}>
+                <ConversionFunnelChart />
+              </Grid.Cell>
+
+              {/* Store Health Score */}
+              <Grid.Cell columnSpan={{xs: 6, sm: 6, md: 6, lg: 6, xl: 6}}>
+                <StoreHealthScore />
+              </Grid.Cell>
+
+              {/* Sales Heatmap */}
+              <Grid.Cell columnSpan={{xs: 12, sm: 12, md: 12, lg: 12, xl: 12}}>
+                <SalesHeatmap />
+              </Grid.Cell>
+          </Grid>
+        </BlockStack>
     </Page>
   );
 }
