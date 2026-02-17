@@ -16,7 +16,7 @@ import {
   CashDollarIcon,
   RefreshIcon,
   ViewIcon,
-  ExperimentIcon,
+  MagicIcon,
   StarIcon,
   SettingsIcon,
 } from '@shopify/polaris-icons';
@@ -54,7 +54,7 @@ export default function App() {
           { url: '/app/financials' + qs, label: 'Financials', icon: CashDollarIcon },
           { url: '/app/subscriptions' + qs, label: 'Subscriptions', icon: RefreshIcon },
           { url: '/app/competitive' + qs, label: 'Competitive Intel', icon: ViewIcon },
-          { url: '/app/abtesting' + qs, label: 'A/B Testing', icon: ExperimentIcon },
+          { url: '/app/abtesting' + qs, label: 'A/B Testing', icon: MagicIcon },
         ]}
       />
       <Navigation.Section
