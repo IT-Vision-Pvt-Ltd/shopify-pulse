@@ -19,7 +19,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           updatedAt
           numberOfOrders
           amountSpent { amount currencyCode }
-          averageOrderAmountV2 { amount currencyCode }
           tags
           addresses(first: 1) { city country }
           verifiedEmail
