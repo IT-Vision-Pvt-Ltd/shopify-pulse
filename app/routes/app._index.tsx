@@ -341,7 +341,7 @@ export default function Dashboard() {
             </Grid.Cell>
             {/* Weekly Performance Scorecard */}
             <Grid.Cell columnSpan={{xs: 12, sm: 12, md: 12, lg: 12, xl: 12}}>
-              <WeeklyScorecardChart />
+              <WeeklyScorecard />
             </Grid.Cell>
           </Grid>
         </BlockStack>
