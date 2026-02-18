@@ -22,14 +22,16 @@ import {
   MagicIcon,
 } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
-import { RevenueByHourChart } from '../../components/dashboard/RevenueByHourChart';
-import { WeeklyScorecard } from '../../components/dashboard/WeeklyScorecard';
-import { YoYRevenueChart } from '../../components/dashboard/YoYRevenueChart';
-import { AlertsFeed } from '../../components/dashboard/AlertsFeed';
-import { RevenueGoalChart } from '../../components/dashboard/RevenueGoalChart';
+import { RevenueByHourChart } from '../components/dashboard/RevenueByHourChart';
+import { WeeklyScorecard } from '../components/dashboard/WeeklyScorecard';
+import { YoYRevenueChart } from '../components/dashboard/YoYRevenueChart';
+import { AlertsFeed } from '../components/dashboard/AlertsFeed';
+import { RevenueGoalChart } from '../components/dashboard/RevenueGoalChart';
 import { ConversionFunnelChart } from "../components/dashboard/ConversionFunnelChart";
 import { StoreHealthScore } from "../components/dashboard/StoreHealthScore";
 import { SalesHeatmap } from "../components/dashboard/SalesHeatmap";
+import { RevenueByChannelChart } from "../components/dashboard/RevenueByChannelChart";
+import { TrafficSourcesChart } from "../components/dashboard/TrafficSourcesChart";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin } = await authenticate.admin(request);
@@ -252,20 +254,7 @@ export default function Dashboard() {
         <Layout>
           <Layout.Section variant="twoThirds">
             <Card>
-              <BlockStack gap="400">
-                <Text as="h3" variant="headingMd">
-                  Revenue by Hour
-                </Text>
-                <Box minHeight="300px" background="bg-surface-secondary" borderRadius="200" padding="400">
-                  <BlockStack gap="200" align="center">
-                    <Text as="p" tone="subdued">
-                    </Text>
-                    <Text as="p" variant="bodySm" tone="subdued">
-                      
-                    </Text>
-                  </BlockStack>
-                </Box>
-              </BlockStack>
+              <RevenueByHourChart />
             </Card>
           </Layout.Section>
 
@@ -334,6 +323,26 @@ export default function Dashboard() {
               <Grid.Cell columnSpan={{xs: 12, sm: 12, md: 12, lg: 12, xl: 12}}>
                 <SalesHeatmap />
               </Grid.Cell>
+            {/* Revenue by Channel */}
+            <Grid.Cell columnSpan={{xs: 6, sm: 6, md: 6, lg: 6, xl: 6}}>
+              <RevenueByChannelChart />
+            </Grid.Cell>
+            {/* Traffic Sources */}
+            <Grid.Cell columnSpan={{xs: 6, sm: 6, md: 6, lg: 6, xl: 6}}>
+              <TrafficSourcesChart />
+            </Grid.Cell>
+            {/* Monthly Revenue YoY */}
+            <Grid.Cell columnSpan={{xs: 6, sm: 6, md: 6, lg: 6, xl: 6}}>
+              <YoYRevenueChart />
+            </Grid.Cell>
+            {/* Alerts & Anomalies */}
+            <Grid.Cell columnSpan={{xs: 6, sm: 6, md: 6, lg: 6, xl: 6}}>
+              <AlertsFeed />
+            </Grid.Cell>
+            {/* Weekly Performance Scorecard */}
+            <Grid.Cell columnSpan={{xs: 12, sm: 12, md: 12, lg: 12, xl: 12}}>
+              <WeeklyScorecardChart />
+            </Grid.Cell>
           </Grid>
         </BlockStack>
     </Page>
