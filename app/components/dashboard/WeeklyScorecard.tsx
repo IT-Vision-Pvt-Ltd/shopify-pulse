@@ -12,7 +12,7 @@ interface WeeklyScorecardProps {
   currency: string;
 }
 
-export function WeeklyScorecard({ data, currency }: WeeklyScorecardProps) {
+export function WeeklyScorecard({ data = [], currency = "USD" }: WeeklyScorecardProps) {
   // Calculate percentiles for color coding
   const getColor = (value: number, values: number[]) => {
     const sorted = [...values].sort((a, b) => a - b);

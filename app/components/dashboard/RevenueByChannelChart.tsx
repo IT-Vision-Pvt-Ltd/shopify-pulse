@@ -14,7 +14,7 @@ interface RevenueByChannelChartProps {
   currency: string;
 }
 
-export function RevenueByChannelChart({ data, currency }: RevenueByChannelChartProps) {
+export function RevenueByChannelChart({ data = [], currency = "USD" }: RevenueByChannelChartProps) {
   return (
     <Card>
       <BlockStack gap="400">

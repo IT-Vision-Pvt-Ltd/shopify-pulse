@@ -11,7 +11,7 @@ interface AlertsFeedProps {
   alerts: Alert[];
 }
 
-export function AlertsFeed({ alerts }: AlertsFeedProps) {
+export function AlertsFeed({ alerts = [] }: AlertsFeedProps) {
   const getIconAndColor = (type: string) => {
     switch (type) {
       case 'warning':

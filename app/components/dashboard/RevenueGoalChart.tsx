@@ -6,7 +6,7 @@ interface RevenueGoalChartProps {
   currency: string;
 }
 
-export function RevenueGoalChart({ currentRevenue, dailyGoal, currency }: RevenueGoalChartProps) {
+export function RevenueGoalChart({ currentRevenue = 0, dailyGoal = 1000, currency = "USD" }: RevenueGoalChartProps) {
   const progress = Math.min((currentRevenue / dailyGoal) * 100, 100);
   const isOnTrack = currentRevenue >= dailyGoal;
 

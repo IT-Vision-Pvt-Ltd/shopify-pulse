@@ -9,7 +9,7 @@ interface YoYRevenueChartProps {
   currency: string;
 }
 
-export function YoYRevenueChart({ data, currency }: YoYRevenueChartProps) {
+export function YoYRevenueChart({ data = [], currency = "USD" }: YoYRevenueChartProps) {
   return (
     <Card>
       <BlockStack gap="400">

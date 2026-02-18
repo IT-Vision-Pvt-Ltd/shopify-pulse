@@ -10,7 +10,7 @@ interface RevenueByHourChartProps {
   currency: string;
 }
 
-export function RevenueByHourChart({ data, currency }: RevenueByHourChartProps) {
+export function RevenueByHourChart({ data = [], currency = "USD" }: RevenueByHourChartProps) {
   return (
     <Card>
       <BlockStack gap="400">
