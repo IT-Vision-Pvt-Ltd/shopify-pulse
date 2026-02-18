@@ -12,6 +12,7 @@ import {
   Icon,
   Badge,
   Divider,
+  Grid,
   InlineGrid,
   SkeletonBodyText,
 } from "@shopify/polaris";
