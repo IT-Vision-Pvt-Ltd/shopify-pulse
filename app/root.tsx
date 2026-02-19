@@ -11,10 +11,13 @@ import type { LinksFunction } from "@remix-run/node";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 // Import our custom global styles
 import globalStyles from "./styles/global.css?url";
+// Import dashboard styles
+import dashboardStyles from "./styles/dashboard.css?url";
 
 export const links: LinksFunction = () => [
   { rel: "stylesheet", href: polarisStyles },
   { rel: "stylesheet", href: globalStyles },
+  { rel: "stylesheet", href: dashboardStyles },
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
   { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
   { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" },
