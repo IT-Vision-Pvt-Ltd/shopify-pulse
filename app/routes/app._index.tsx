@@ -1,7 +1,7 @@
 import { useLoaderData, useSearchParams, Link } from "@remix-run/react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, lazy, Suspense } from "react";
 import { authenticate } from "../shopify.server";
 import {
   LayoutDashboard,
@@ -34,7 +34,21 @@ import {
   CheckCircle,
   TrendingDown,
 } from "lucide-react";
-import Chart from "react-apexcharts";
+// Dynamic import for react-apexcharts (SSR-safe: avoids "window is not defined")
+const Chart = typeof window !== "undefined" 
+  ? lazy(() => import("react-apexcharts"))
+  : () => null;
+
+function ClientChart(props: any) {
+  const [isClient, setIsClient] = useState(false);
+  useEffect(() => { setIsClient(true); }, []);
+  if (!isClient) return <div style={{ height: props.height || 230 }} />;
+  return (
+    <Suspense fallback={<div style={{ height: props.height || 230 }} />}>
+      <ClientChart {...props} />
+    </Suspense>
+  );
+}
 
 // Types
 interface KPIData {
@@ -335,7 +349,7 @@ function KPICard({
       </div>
       <div className="flex items-center justify-between mt-3">
         <div className="w-20 h-8">
-          <Chart
+          <ClientChart
             options={sparklineOptions}
             series={sparklineData.series}
             type="area"
@@ -586,7 +600,7 @@ export default function Dashboard() {
           {/* Row 1: Revenue by Hour + Health Score */}
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
             <ChartCard title="Revenue by Hour" delay={1} className="lg:col-span-3">
-              <Chart
+              <ClientChart
                 options={revenueByHourOptions}
                 series={revenueByHourSeries}
                 type="bar"
@@ -595,7 +609,7 @@ export default function Dashboard() {
             </ChartCard>
             <ChartCard title="Store Health Score" delay={2} className="lg:col-span-2">
               <div className="flex justify-center">
-                <Chart
+                <ClientChart
                   options={gaugeOptions}
                   series={gaugeSeries}
                   type="radialBar"
