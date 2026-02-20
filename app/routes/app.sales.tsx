@@ -238,7 +238,7 @@ export default function SalesRevenue() {
   const aovSeries = [{ name: "AOV", data: aovByDay || [0,0,0,0,0,0,0] }];
 
   return (
-    <div className="sp-layout">
+    <div className={isDark ? "dark" : ""}>
       <Sidebar isOpen={sidebarOpen} onToggle={() => setSidebarOpen(!sidebarOpen)} activePage="sales" />
       <div className="sp-main-content">
         <TopBar dateRange={dateRange} onMenuToggle={() => setSidebarOpen(!sidebarOpen)} isDark={isDark} onThemeToggle={toggleTheme} shopName={shopName} />
