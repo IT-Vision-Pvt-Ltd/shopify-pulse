@@ -46,7 +46,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const d60ISO = d60.toISOString();
 
   const shopResponse = await admin.graphql(`
-    query DashboardData($cur30: String!, $prev60: String!, $prev30: String!) {
+    query DashboardData($cur30: String!, $prev60: String!) {
       shop { name currencyCode }
       currentOrders: orders(first: 250, query: $cur30) {
         edges { node {
@@ -92,7 +92,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       }
       ordersCount: ordersCount { count }
     }
-  `, { variables: { cur30: `created_at:>${d30ISO}`, prev60: `created_at:>${d60ISO} created_at:<=${d30ISO}`, prev30: `created_at:>${d30ISO}` } });
+  `, { variables: { cur30: `created_at:>${d30ISO}`, prev60: `created_at:>${d60ISO} created_at:<=${d30ISO}`,  } });
 
   const shopData = await shopResponse.json();
   const curOrders = shopData.data?.currentOrders?.edges || [];
@@ -427,7 +427,7 @@ function AlertFeed() {
 }
 
 export default function Dashboard() {
-  const { shopName, metrics, currency } = useLoaderData<typeof loader>();
+  const { shopName, metrics, currency, revenueByHour, revenueByDay, ordersByDay, fulfillmentCounts, inventory, customers, discountCodes, totalDiscountOrders, monthlyRevenue, storeHealth, last7Days, last7Revenue, weeklyHeat, shopDomain } = useLoaderData<typeof loader>();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isDark, setIsDark] = useState(false);
   const toggleTheme = () => { setIsDark(!isDark); document.documentElement.classList.toggle("dark"); };
