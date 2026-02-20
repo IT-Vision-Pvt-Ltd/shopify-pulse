@@ -74,23 +74,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           }}}
         }}
       }
-      customersCount { count }
-      codeDiscountNodes(first: 20) {
-        edges { node {
-          id
-          codeDiscount {
-            ... on DiscountCodeBasic {
-              title codes(first: 5) { edges { node { code asyncUsageCount } } }
-              usageLimit
-              customerGets { value {
-                ... on DiscountPercentage { percentage }
-                ... on DiscountAmount { amount { amount } }
-              }}
+      customersCount { count }}
             }
           }
         }}
       }
-      ordersCount: ordersCount { count }
     }
   `, { variables: { cur30: `created_at:>${d30ISO}`, prev60: `created_at:>${d60ISO} created_at:<=${d30ISO}`,  } });
 
@@ -167,7 +155,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   });
 
   // === DISCOUNTS ===
-  const discountNodes = shopData.data?.codeDiscountNodes?.edges || [];
+  const discountNodes = shopData.data?.codeDiscountNodes?.edges || []; // May be empty if no read_discounts scope
   const discountCodes = discountNodes.flatMap((e: any) => {
     const d = e.node.codeDiscount;
     if (!d || !d.codes) return [];
