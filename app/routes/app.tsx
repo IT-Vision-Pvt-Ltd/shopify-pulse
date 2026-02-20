@@ -10,8 +10,12 @@ import { LayoutDashboard, TrendingUp, Package, Users, Megaphone, Warehouse, File
 export const headers: HeadersFunction = () => ({ "Cache-Control": "no-store" });
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
-  return json({ apiKey: process.env.SHOPIFY_API_KEY || "", shop: session?.shop || "", initials: (session?.shop || "SP").substring(0, 2).toUpperCase() });
+  try {
+    const { session } = await authenticate.admin(request);
+    return json({ apiKey: process.env.SHOPIFY_API_KEY || ""  , shop: session?.shop || "", initials: (session?.shop || "SP").substring(0, 2).toUpperCase() });
+  } catch (error) {
+    return json({ apiKey: process.env.SHOPIFY_API_KEY || "", shop: "", initials: "SP" });
+  }
 };
 
 const NAV = [
