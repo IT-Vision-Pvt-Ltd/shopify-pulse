@@ -294,153 +294,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   });
 };
 
-function Sidebar({ isOpen, onToggle, activePage }: { isOpen: boolean; onToggle: () => void; activePage: string; }) {
-  const navItems = [
-    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, href: "/app" },
-    { id: "sales", label: "Sales & Revenue", icon: TrendingUp, href: "/app/sales" },
-    { id: "products", label: "Products", icon: Box, href: "/app/products" },
-    { id: "customers", label: "Customer Intelligence", icon: Users, href: "/app/customers" },
-    { id: "marketing", label: "Marketing", icon: Megaphone, href: "/app/marketing" },
-    { id: "inventory", label: "Inventory", icon: Warehouse, href: "/app/inventory" },
-    { id: "reports", label: "Reports", icon: BarChart3, href: "/app/reports" },
-  ];
-  return (
-    <>
-      <div className={`sp-sidebar-overlay ${isOpen ? "active" : ""}`} onClick={onToggle} />
-      <aside className={`sp-sidebar ${isOpen ? "open" : ""}`}>
-        <div className="p-5 pb-3">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg, #0096c7, #00b4d8)" }}>
-              <Zap className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-white font-bold text-lg tracking-tight">ShopifyPulse</span>
-          </div>
-        </div>
-        <nav className="mt-2 pb-4">
-          {navItems.map((item) => (
-            <Link key={item.id} to={item.href} className={`sp-sidebar-link ${activePage === item.id ? "active" : ""}`}>
-              <item.icon className="w-5 h-5" /><span>{item.label}</span>
-            </Link>
-          ))}
-          <div className="sp-sidebar-separator" />
-          <Link to="/app/ai-insights" className="sp-sidebar-link" style={{ color: "#7bcce8" }}>
-            <Sparkles className="w-5 h-5" style={{ color: "#00b4d8" }} />
-            <span>AI Insights</span>
-            <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: "#0096c7", color: "#fff" }}>AI</span>
-          </Link>
-          <Link to="/app/settings" className="sp-sidebar-link"><Settings className="w-5 h-5" /><span>Settings</span></Link>
-        </nav>
-        <div className="mt-auto p-3">
-          <div className="sp-store-selector"><span>Select Store</span><ChevronDown className="w-4 h-4" /></div>
-        </div>
-      </aside>
-    </>
-  );
-}
-
-function TopBar({ onMenuToggle, isDark, onThemeToggle, shopName, dateRange }: { onMenuToggle: () => void; isDark: boolean; onThemeToggle: () => void; shopName: string; dateRange: number; }) {
-  return (
-    <header className="sp-top-bar">
-      <div className="flex items-center gap-3">
-        <button className="sp-icon-btn lg:hidden" onClick={onMenuToggle}><Menu className="w-5 h-5" /></button>
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm cursor-pointer border" style={{ background: "var(--bg-surface-secondary)", borderColor: "var(--border-default)", color: "var(--text-secondary)" }}>
-          <Calendar className="w-4 h-4" /><select className="bg-transparent border-none text-sm cursor-pointer outline-none" value={dateRange || 30} onChange={(e) => { const newRange = e.target.value; window.location.href = `?dateRange=${newRange}`; }}><option value="7">Last 7 Days</option><option value="14">Last 14 Days</option><option value="30">Last 30 Days</option><option value="60">Last 60 Days</option><option value="90">Last 90 Days</option></select>
-        </div>
-      </div>
-      <div className="flex-1 max-w-lg mx-4 lg:mx-8 hidden sm:block">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-gray-400" />
-          <input type="text" placeholder="Search ShopifyPulse..." className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm focus:outline-none transition border" style={{ background: "var(--bg-surface-secondary)", borderColor: "var(--border-default)", color: "var(--text-primary)" }} />
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
-        <button className="sp-ask-ai-btn"><Sparkles className="w-4 h-4" /><span className="hidden sm:inline">Ask AI</span></button>
-        <button className="sp-icon-btn relative"><Bell className="w-[18px] h-[18px]" /><div className="sp-notif-badge">3</div></button>
-        <button className="sp-icon-btn" onClick={onThemeToggle} title="Toggle theme">
-          {isDark ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
-        </button>
-        <div className="w-9 h-9 rounded-full flex items-center justify-center cursor-pointer ml-1" style={{ background: "linear-gradient(135deg, #0077b6, #00b4d8)" }}>
-          <span className="text-white text-sm font-semibold">{shopName.substring(0, 2).toUpperCase()}</span>
-        </div>
-      </div>
-    </header>
-  );
-}
-
-function KPICard({ label, value, trend, trendType, delay }: KPIData & { delay: number }) {
-  const isPositive = trendType === "positive";
-  const isNegative = trendType === "negative";
-  const sparkOpts = {
-    chart: { type: "area" as const, height: 32, sparkline: { enabled: true }, animations: { enabled: false } },
-    stroke: { curve: "smooth" as const, width: 2 },
-    fill: { type: "gradient", gradient: { shadeIntensity: 1, opacityFrom: 0.4, opacityTo: 0.05, stops: [0, 100] } },
-    colors: [isPositive ? "#059669" : isNegative ? "#dc2626" : "#0077b6"],
-    tooltip: { enabled: false },
-  };
-  return (
-    <div className={`sp-kpi-card sp-animate-in sp-d${delay}`}>
-      <div className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--text-secondary)" }}>{label}</div>
-      <div className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>{value}</div>
-      <div className="flex items-center justify-between mt-3">
-        <div className="w-20 h-8">
-          <ClientChart options={sparkOpts} series={[{ data: [10, 15, 12, 18, 14, 20, 16, 22, 18, 25] }]} type="area" height={32} />
-        </div>
-        <span className={`sp-badge ${isPositive ? "sp-badge-green" : isNegative ? "sp-badge-red" : "sp-badge-yellow"}`}>
-          {isPositive ? "+" : ""}{trend}%
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function AIBriefBanner() {
-  const insights = [
-    { type: "success", text: "Revenue up 12% driven by SAVE20 promo success." },
-    { type: "warning", text: "237 customers at churn risk - win-back campaign ready." },
-    { type: "info", text: "3 SKUs will stockout within 5 days - reorder recommended." },
-  ];
-  return (
-    <div className="sp-ai-brief sp-animate-in">
-      <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <Sparkles className="w-5 h-5 text-cyan-200" />
-            <h2 className="text-lg font-bold text-white">AI Daily Brief</h2>
-          </div>
-          <div className="space-y-2">
-            {insights.map((insight, i) => (
-              <div key={i} className="flex items-center gap-2 text-sm" style={{ color: "rgba(179,224,240,0.9)" }}>
-                <span className={`w-2 h-2 rounded-full ${i === 0 ? "sp-pulse-dot bg-teal-300" : i === 1 ? "bg-yellow-300" : "bg-blue-300"}`} />
-                {insight.text}
-              </div>
-            ))}
-          </div>
-        </div>
-        <button className="px-5 py-2.5 rounded-lg text-sm font-semibold transition flex items-center gap-2 backdrop-blur-sm whitespace-nowrap hover:bg-white/30" style={{ background: "rgba(255,255,255,0.2)", color: "#fff" }}>
-          View Full Report <ArrowRight className="w-4 h-4" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function ChartCard({ title, children, delay = 0, className = "" }: { title: string; children: React.ReactNode; delay?: number; className?: string; }) {
-  return (
-    <div className={`sp-dash-card p-5 sp-animate-in ${delay > 0 ? `sp-d${delay}` : ""} ${className}`}>
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <GripVertical className="w-3.5 h-3.5 opacity-0 hover:opacity-50 transition-opacity" style={{ color: "var(--text-secondary)" }} />
-          <h3 className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>{title}</h3>
-        </div>
-        <button className="opacity-0 hover:opacity-100 transition-opacity p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
-          <Maximize2 className="w-3.5 h-3.5" style={{ color: "var(--text-secondary)" }} />
-        </button>
-      </div>
-      {children}
-    </div>
-  );
-}
-
 function AlertFeed() {
   const alerts: AlertItem[] = [
     { id: "1", type: "critical", title: "Revenue drop detected", description: "Revenue fell 18% vs. last Tuesday.", timestamp: "2m" },
@@ -569,10 +422,7 @@ export default function Dashboard() {
     { label: "Other", value: 0, color: "#0096c7" },
   ];
   return (
-    <div className={isDark ? "dark" : ""}>
-      <Sidebar isOpen={sidebarOpen} onToggle={() => setSidebarOpen(!sidebarOpen)} activePage="dashboard" />
-      <div className="sp-main-content">
-        <TopBar dateRange={dateRange} onMenuToggle={() => setSidebarOpen(!sidebarOpen)} isDark={isDark} onThemeToggle={toggleTheme} shopName={shopName} />
+    <div className="sp-dashboard-wrapper">
         <main className="p-4 lg:p-6 space-y-4">
           <AIBriefBanner />
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 lg:gap-4">
@@ -759,6 +609,5 @@ export default function Dashboard() {
           </footer>
         </main>
       </div>
-    </div>
   );
 }
