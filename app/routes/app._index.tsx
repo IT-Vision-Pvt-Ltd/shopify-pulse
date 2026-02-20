@@ -36,29 +36,215 @@ interface AlertItem {
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
+
+  // Get date ranges for current and previous 30-day periods
+  const now = new Date();
+  const d30 = new Date(now.getTime() - 30 * 86400000);
+  const d60 = new Date(now.getTime() - 60 * 86400000);
+  const nowISO = now.toISOString();
+  const d30ISO = d30.toISOString();
+  const d60ISO = d60.toISOString();
+
   const shopResponse = await admin.graphql(`
-    query {
+    query DashboardData($cur30: String!, $prev60: String!, $prev30: String!) {
       shop { name currencyCode }
-      orders(first: 50, sortKey: CREATED_AT, reverse: true) {
-        edges { node { id name totalPriceSet { shopMoney { amount currencyCode } } createdAt displayFinancialStatus } }
+      currentOrders: orders(first: 250, query: $cur30) {
+        edges { node {
+          id createdAt
+          displayFulfillmentStatus displayFinancialStatus
+          totalPriceSet { shopMoney { amount } }
+          subtotalPriceSet { shopMoney { amount } }
+          customer { id numberOfOrders }
+          shippingLine { carrierIdentifier title }
+        }}
       }
-      products(first: 10, sortKey: CREATED_AT, reverse: true) {
-        edges { node { id title totalInventory variants(first: 1) { edges { node { inventoryQuantity } } } } }
+      prevOrders: orders(first: 250, query: $prev60) {
+        edges { node {
+          id createdAt
+          totalPriceSet { shopMoney { amount } }
+          customer { id }
+        }}
       }
+      products(first: 100) {
+        edges { node {
+          id title
+          totalInventory
+          variants(first: 10) { edges { node {
+            inventoryQuantity inventoryItem { id }
+          }}}
+        }}
+      }
+      customersCount { count }
+      codeDiscountNodes(first: 20) {
+        edges { node {
+          id
+          codeDiscount {
+            ... on DiscountCodeBasic {
+              title codes(first: 5) { edges { node { code usageCount } } }
+              usageLimit
+              customerGets { value {
+                ... on DiscountPercentage { percentage }
+                ... on DiscountAmount { amount { amount } }
+              }}
+            }
+          }
+        }}
+      }
+      ordersCount: ordersCount { count }
     }
-  `);
+  `, { variables: { cur30: `created_at:>${d30ISO}`, prev60: `created_at:>${d60ISO} created_at:<=${d30ISO}`, prev30: `created_at:>${d30ISO}` } });
+
   const shopData = await shopResponse.json();
-  const orders = shopData.data?.orders?.edges || [];
-  const totalRevenue = orders.reduce((sum: number, edge: any) => sum + parseFloat(edge.node.totalPriceSet?.shopMoney?.amount || 0), 0);
-  const orderCount = orders.length;
+  const curOrders = shopData.data?.currentOrders?.edges || [];
+  const prevOrders = shopData.data?.prevOrders?.edges || [];
+  const products = shopData.data?.products?.edges || [];
+
+  // === REVENUE & ORDERS ===
+  const totalRevenue = curOrders.reduce((s: number, e: any) => s + parseFloat(e.node.totalPriceSet?.shopMoney?.amount || 0), 0);
+  const prevRevenue = prevOrders.reduce((s: number, e: any) => s + parseFloat(e.node.totalPriceSet?.shopMoney?.amount || 0), 0);
+  const orderCount = curOrders.length;
+  const prevOrderCount = prevOrders.length;
   const aov = orderCount > 0 ? totalRevenue / orderCount : 0;
+  const prevAov = prevOrderCount > 0 ? prevRevenue / prevOrderCount : 0;
+  const revTrend = prevRevenue > 0 ? Math.round(((totalRevenue - prevRevenue) / prevRevenue) * 100 * 10) / 10 : 0;
+  const orderTrend = prevOrderCount > 0 ? Math.round(((orderCount - prevOrderCount) / prevOrderCount) * 100 * 10) / 10 : 0;
+  const aovTrend = prevAov > 0 ? Math.round(((aov - prevAov) / prevAov) * 100 * 10) / 10 : 0;
+
+  // === REVENUE BY HOUR (today) ===
+  const today = new Date(); today.setHours(0,0,0,0);
+  const hourRevenue = new Array(24).fill(0);
+  curOrders.forEach((e: any) => {
+    const d = new Date(e.node.createdAt);
+    if (d >= today) hourRevenue[d.getHours()] += parseFloat(e.node.totalPriceSet?.shopMoney?.amount || 0);
+  });
+
+  // === REVENUE BY DAY OF WEEK ===
+  const dayRevenue = new Array(7).fill(0);
+  const dayOrders = new Array(7).fill(0);
+  curOrders.forEach((e: any) => {
+    const day = new Date(e.node.createdAt).getDay(); // 0=Sun
+    dayRevenue[day] += parseFloat(e.node.totalPriceSet?.shopMoney?.amount || 0);
+    dayOrders[day] += 1;
+  });
+  // Reorder Mon-Sun
+  const revenueByDay = [dayRevenue[1],dayRevenue[2],dayRevenue[3],dayRevenue[4],dayRevenue[5],dayRevenue[6],dayRevenue[0]];
+  const ordersByDay = [dayOrders[1],dayOrders[2],dayOrders[3],dayOrders[4],dayOrders[5],dayOrders[6],dayOrders[0]];
+
+  // === FULFILLMENT PIPELINE ===
+  const fulfillCounts = { UNFULFILLED: 0, IN_PROGRESS: 0, PARTIALLY_FULFILLED: 0, FULFILLED: 0, SCHEDULED: 0 };
+  curOrders.forEach((e: any) => {
+    const s = e.node.displayFulfillmentStatus;
+    if (s === "UNFULFILLED" || s === "ON_HOLD") fulfillCounts.UNFULFILLED++;
+    else if (s === "IN_PROGRESS" || s === "PENDING") fulfillCounts.IN_PROGRESS++;
+    else if (s === "PARTIALLY_FULFILLED") fulfillCounts.PARTIALLY_FULFILLED++;
+    else if (s === "FULFILLED") fulfillCounts.FULFILLED++;
+    else fulfillCounts.UNFULFILLED++;
+  });
+
+  // === INVENTORY HEALTH ===
+  let totalInv = 0, inStock = 0, lowStock = 0, outStock = 0;
+  const lowStockProducts: any[] = [];
+  products.forEach((e: any) => {
+    const qty = e.node.totalInventory || 0;
+    totalInv++;
+    if (qty <= 0) outStock++;
+    else if (qty <= 10) { lowStock++; lowStockProducts.push({ title: e.node.title, qty }); }
+    else inStock++;
+  });
+
+  // === CUSTOMERS ===
+  const totalCustomers = shopData.data?.customersCount?.count || 0;
+  let newCustomers = 0, returningCustomers = 0;
+  const seenCustomers = new Set();
+  curOrders.forEach((e: any) => {
+    if (!e.node.customer) return;
+    const cid = e.node.customer.id;
+    if (!seenCustomers.has(cid)) {
+      seenCustomers.add(cid);
+      if (parseInt(e.node.customer.numberOfOrders) <= 1) newCustomers++;
+      else returningCustomers++;
+    }
+  });
+
+  // === DISCOUNTS ===
+  const discountNodes = shopData.data?.codeDiscountNodes?.edges || [];
+  const discountCodes = discountNodes.flatMap((e: any) => {
+    const d = e.node.codeDiscount;
+    if (!d || !d.codes) return [];
+    return d.codes.edges.map((c: any) => ({
+      name: c.node.code,
+      uses: c.node.usageCount || 0,
+    }));
+  }).sort((a: any, b: any) => b.uses - a.uses).slice(0, 5);
+
+  const totalDiscountOrders = discountNodes.reduce((s: number, e: any) => {
+    const d = e.node.codeDiscount;
+    if (!d || !d.codes) return s;
+    return s + d.codes.edges.reduce((ss: number, c: any) => ss + (c.node.usageCount || 0), 0);
+  }, 0);
+
+  // === YoY REVENUE (monthly - current year using available data) ===
+  const monthlyRevenue: number[] = new Array(12).fill(0);
+  const curYear = now.getFullYear();
+  curOrders.forEach((e: any) => {
+    const d = new Date(e.node.createdAt);
+    if (d.getFullYear() === curYear) monthlyRevenue[d.getMonth()] += parseFloat(e.node.totalPriceSet?.shopMoney?.amount || 0);
+  });
+
+  // === WEEKLY HEATMAP (revenue per day/metric normalized) ===
+  const weeklyHeat = {
+    revenue: revenueByDay.map(v => revenueByDay[0] > 0 ? Math.round((v / Math.max(...revenueByDay)) * 100) : 0),
+    orders: ordersByDay.map(v => ordersByDay[0] > 0 ? Math.round((v / Math.max(...ordersByDay)) * 100) : 0),
+  };
+
+  // === STORE HEALTH SCORE (computed composite) ===
+  const fulfillRate = orderCount > 0 ? (fulfillCounts.FULFILLED / orderCount) * 100 : 0;
+  const inStockRate = totalInv > 0 ? ((totalInv - outStock) / totalInv) * 100 : 100;
+  const storeHealth = Math.round((fulfillRate * 0.4 + inStockRate * 0.4 + Math.min(100, (orderCount / 10)) * 0.2));
+
+  // === AOV SPARKLINE (last 7 days) ===
+  const last7Days: number[] = new Array(7).fill(0);
+  const last7Revenue: number[] = new Array(7).fill(0);
+  for (let i = 6; i >= 0; i--) {
+    const dayStart = new Date(now.getTime() - i * 86400000); dayStart.setHours(0,0,0,0);
+    const dayEnd = new Date(dayStart.getTime() + 86400000);
+    curOrders.forEach((e: any) => {
+      const d = new Date(e.node.createdAt);
+      if (d >= dayStart && d < dayEnd) {
+        last7Days[6-i] += 1;
+        last7Revenue[6-i] += parseFloat(e.node.totalPriceSet?.shopMoney?.amount || 0);
+      }
+    });
+  }
+
   return json({
     shopName: shopData.data?.shop?.name || "Your Store",
     currency: shopData.data?.shop?.currencyCode || "USD",
     shopDomain: session.shop,
-    metrics: { revenue: totalRevenue, orders: orderCount, aov, conversionRate: 3.2, profitMargin: 18.4 },
-    recentOrders: orders.slice(0, 5),
-    products: shopData.data?.products?.edges || [],
+    metrics: {
+      revenue: totalRevenue, orders: orderCount, aov,
+      conversionRate: 3.2, profitMargin: 18.4,
+      revTrend, orderTrend, aovTrend,
+    },
+    recentOrders: curOrders.slice(0, 5),
+    products: products,
+    revenueByHour: hourRevenue,
+    revenueByDay, ordersByDay,
+    fulfillmentCounts: [
+      { label: "Received", value: orderCount, color: "#0077b6" },
+      { label: "Processing", value: fulfillCounts.IN_PROGRESS + fulfillCounts.UNFULFILLED, color: "#f59e0b" },
+      { label: "Partially Shipped", value: fulfillCounts.PARTIALLY_FULFILLED, color: "#f97316" },
+      { label: "Fulfilled", value: fulfillCounts.FULFILLED, color: "#22c55e" },
+      { label: "Other", value: fulfillCounts.SCHEDULED, color: "#0096c7" },
+    ],
+    inventory: { total: totalInv, inStock, lowStock, outStock, lowStockProducts: lowStockProducts.slice(0, 3) },
+    customers: { total: totalCustomers, newCount: newCustomers, returningCount: returningCustomers },
+    discountCodes,
+    totalDiscountOrders,
+    monthlyRevenue,
+    storeHealth: Math.min(100, Math.max(0, storeHealth)),
+    last7Days, last7Revenue,
+    weeklyHeat,
   });
 };
 
@@ -78,7 +264,7 @@ function Sidebar({ isOpen, onToggle, activePage }: { isOpen: boolean; onToggle: 
       <aside className={`sp-sidebar ${isOpen ? "open" : ""}`}>
         <div className="p-5 pb-3">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg, #0096c7, #00b4d8)" }}>
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(13{s.qty || "n/a"}eg, #0096c7, #00b4d8)" }}>
               <Zap className="w-5 h-5 text-white" />
             </div>
             <span className="text-white font-bold text-lg tracking-tight">ShopifyPulse</span>
@@ -127,7 +313,7 @@ function TopBar({ onMenuToggle, isDark, onThemeToggle, shopName }: { onMenuToggl
         <button className="sp-icon-btn" onClick={onThemeToggle} title="Toggle theme">
           {isDark ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
         </button>
-        <div className="w-9 h-9 rounded-full flex items-center justify-center cursor-pointer ml-1" style={{ background: "linear-gradient(135deg, #0077b6, #00b4d8)" }}>
+        <div className="w-9 h-9 rounded-full flex items-center justify-center cursor-pointer ml-1" style={{ background: "linear-gradient(13{s.qty || "n/a"}eg, #0077b6, #00b4d8)" }}>
           <span className="text-white text-sm font-semibold">{shopName.substring(0, 2).toUpperCase()}</span>
         </div>
       </div>
@@ -247,20 +433,20 @@ export default function Dashboard() {
   const toggleTheme = () => { setIsDark(!isDark); document.documentElement.classList.toggle("dark"); };
   const formatCurrency = (value: number) => new Intl.NumberFormat("en-US", { style: "currency", currency, minimumFractionDigits: value > 1000 ? 0 : 2, maximumFractionDigits: value > 1000 ? 0 : 2 }).format(value);
   const kpiData: KPIData[] = [
-    { label: "Revenue", value: formatCurrency(metrics.revenue), trend: 12, trendType: "positive" },
-    { label: "Orders", value: metrics.orders.toString(), trend: 5, trendType: "positive" },
-    { label: "AOV", value: formatCurrency(metrics.aov), trend: 2, trendType: "negative" },
+    { label: "Revenue", value: formatCurrency(metrics.revenue), trend: Math.abs(metrics.revTrend), trendType: metrics.revTrend >= 0 ? "positive" : "negative" },
+    { label: "Orders", value: metrics.orders.toString(), trend: Math.abs(metrics.orderTrend), trendType: metrics.orderTrend >= 0 ? "positive" : "negative" },
+    { label: "AOV", value: formatCurrency(metrics.aov), trend: Math.abs(metrics.aovTrend), trendType: metrics.aovTrend >= 0 ? "positive" : "negative" },
     { label: "CR", value: `${metrics.conversionRate}%`, trend: 1.5, trendType: "positive" },
     { label: "Profit", value: `${metrics.profitMargin}%`, trend: 8, trendType: "positive" },
   ];
 
   const revByHourOpts = { chart: { type: "bar" as const, height: 230, toolbar: { show: false } }, plotOptions: { bar: { borderRadius: 4, columnWidth: "55%", distributed: true } }, colors: ["#94a3b8","#94a3b8","#94a3b8","#f59e0b","#f97316","#ef4444","#ef4444","#f97316","#f59e0b","#22c55e","#22c55e","#22c55e","#ef4444","#f97316","#f59e0b","#22c55e","#22c55e","#f59e0b","#94a3b8","#94a3b8","#94a3b8","#94a3b8","#94a3b8","#94a3b8"], legend: { show: false }, xaxis: { categories: ["12a","1a","2a","3a","4a","5a","6a","7a","8a","9a","10a","11a","12p","1p","2p","3p","4p","5p","6p","7p","8p","9p","10p","11p"], labels: { style: { colors: "#6b8299", fontSize: "10px" } } }, yaxis: { labels: { style: { colors: "#6b8299", fontSize: "10px" }, formatter: (v: number) => `$${(v/1000).toFixed(1)}K` } }, grid: { borderColor: "#e2e8f0", strokeDashArray: 3 }, dataLabels: { enabled: false }, tooltip: { y: { formatter: (v: number) => `$${v.toLocaleString()}` } } };
-  const revByHourSeries = [{ name: "Revenue", data: [200,100,150,180,120,300,400,800,1200,1500,1400,1600,2200,1800,1400,1600,1380,1200,900,700,500,400,300,200] }];
+  const revByHourSeries = [{ name: "Revenue", data: revenueByHour || [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }];
 
-  const gaugeOpts = { chart: { type: "radialBar" as const, height: 220 }, plotOptions: { radialBar: { startAngle: -135, endAngle: 135, track: { background: "#e7e7e7", strokeWidth: "100%" }, dataLabels: { name: { show: true, fontSize: "14px", offsetY: 20, color: "#0077b6" }, value: { fontSize: "36px", fontWeight: 700, color: "#023e58", offsetY: -15, formatter: () => "78" } }, hollow: { size: "65%" } } }, colors: ["#0077b6"], stroke: { lineCap: "round" as const }, labels: ["Health Score"] };
+  const gaugeOpts = { chart: { type: "radialBar" as const, height: 220 }, plotOptions: { radialBar: { startAngle: -135, endAngle: 135, track: { background: "#e7e7e7", strokeWidth: "100%" }, dataLabels: { name: { show: true, fontSize: "14px", offsetY: 20, color: "#0077b6" }, value: { fontSize: "36px", fontWeight: 700, color: "#023e58", offsetY: -15, formatter: () => String(storeHealth || 78) } }, hollow: { size: "65%" } } }, colors: ["#0077b6"], stroke: { lineCap: "round" as const }, labels: ["Health Score"] };
 
   const revByChannelOpts = { chart: { type: "area" as const, height: 230, toolbar: { show: false }, stacked: false }, stroke: { curve: "smooth" as const, width: 2 }, colors: ["#0077b6", "#22c55e", "#f59e0b"], fill: { type: "gradient", gradient: { shadeIntensity: 1, opacityFrom: 0.3, opacityTo: 0.05 } }, xaxis: { categories: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], labels: { style: { colors: "#6b8299", fontSize: "10px" } } }, yaxis: { labels: { style: { colors: "#6b8299", fontSize: "10px" }, formatter: (v: number) => `$${(v/1000).toFixed(0)}K` } }, grid: { borderColor: "#e2e8f0", strokeDashArray: 3 }, dataLabels: { enabled: false }, legend: { position: "bottom" as const, fontSize: "11px" } };
-  const revByChannelSeries = [{ name: "Online Store", data: [8000,9200,7800,10500,14200,11000,9500] }, { name: "Social", data: [2000,2400,3100,2800,3500,4200,3000] }, { name: "Marketplace", data: [1500,1800,1200,2000,2800,2200,1800] }];
+  const revByChannelSeries = [{ name: "Online Store", data: revenueByDay || [0,0,0,0,0,0,0] }, { name: "Social", data: [0,0,0,0,0,0,0] }, { name: "Marketplace", data: [0,0,0,0,0,0,0] }];
 
   const trafficOpts = { chart: { type: "donut" as const, height: 230 }, labels: ["Organic","Paid","Social","Direct"], colors: ["#0077b6","#8b5cf6","#22c55e","#ef4444"], plotOptions: { pie: { donut: { size: "65%", labels: { show: true, total: { show: true, label: "Total", fontSize: "12px", formatter: () => "100" } } } } }, dataLabels: { enabled: true, formatter: (v: number) => `${v.toFixed(0)}%` }, legend: { position: "bottom" as const, fontSize: "11px" } };
   const trafficSeries = [42, 28, 18, 12];
@@ -286,13 +472,13 @@ export default function Dashboard() {
   const salesHeatOpts = { chart: { type: "heatmap" as const, height: 200, toolbar: { show: false } }, plotOptions: { heatmap: { radius: 4, colorScale: { ranges: [{from:0,to:20,color:"#e2e8f0",name:"Low"},{from:21,to:40,color:"#22c55e",name:"Med-Low"},{from:41,to:60,color:"#f59e0b",name:"Medium"},{from:61,to:80,color:"#f97316",name:"High"},{from:81,to:100,color:"#ef4444",name:"Very High"}] } } }, dataLabels: { enabled: true, style: { fontSize: "10px", colors: ["#fff"] } }, xaxis: { labels: { style: { colors: "#6b8299", fontSize: "10px" } } }, yaxis: { labels: { style: { colors: "#6b8299", fontSize: "10px" } } } };
 
   const yoyOpts = { chart: { type: "bar" as const, height: 230, toolbar: { show: false } }, plotOptions: { bar: { borderRadius: 3, columnWidth: "40%" } }, colors: ["#0077b6","#22c55e"], xaxis: { categories: ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"], labels: { style: { colors: "#6b8299", fontSize: "10px" } } }, yaxis: { labels: { style: { colors: "#6b8299", fontSize: "10px" }, formatter: (v: number) => `$${(v/1000).toFixed(0)}K` } }, grid: { borderColor: "#e2e8f0", strokeDashArray: 3 }, dataLabels: { enabled: false }, legend: { position: "top" as const, horizontalAlign: "right" as const } };
-  const yoySeries = [{ name: "2025", data: [42000,38000,55000,48000,62000,58000,95000,72000,68000,0,0,0] }, { name: "2024", data: [35000,32000,45000,42000,52000,49000,78000,65000,60000,55000,48000,42000] }];
+  const yoySeries = [{ name: String(new Date().getFullYear()), data: monthlyRevenue || new Array(12).fill(0) }, { name: String(new Date().getFullYear() - 1), data: new Array(12).fill(0) }];
 
   const waterfallOpts = { chart: { type: "bar" as const, height: 220, toolbar: { show: false } }, plotOptions: { bar: { borderRadius: 3, columnWidth: "50%" } }, colors: ["#22c55e","#ef4444","#ef4444","#f97316","#f59e0b"], xaxis: { categories: ["Gross","Discounts","Shipping","COGS","Ad Spend"], labels: { style: { colors: "#6b8299", fontSize: "10px" } } }, yaxis: { labels: { style: { colors: "#6b8299", fontSize: "10px" }, formatter: (v: number) => `$${(v/1000).toFixed(0)}K` } }, grid: { borderColor: "#e2e8f0", strokeDashArray: 3 }, dataLabels: { enabled: false } };
   const waterfallSeries = [{ name: "Amount", data: [148000, 21500, 12000, 45000, 18500] }];
 
-  const custAcqOpts = { chart: { type: "donut" as const, height: 200 }, labels: ["New","Returning"], colors: ["#0077b6","#22c55e"], plotOptions: { pie: { donut: { size: "70%", labels: { show: true, total: { show: true, label: "Total", fontSize: "12px", formatter: () => "12,847" } } } } }, dataLabels: { enabled: false }, legend: { show: false } };
-  const custAcqSeries = [842, 12005];
+  const custAcqOpts = { chart: { type: "donut" as const, height: 200 }, labels: ["New","Returning"], colors: ["#0077b6","#22c55e"], plotOptions: { pie: { donut: { size: "70%", labels: { show: true, total: { show: true, label: "Total", fontSize: "12px", formatter: () => String((customers?.newCount || 0) + (customers?.returningCount || 0)) } } } } }, dataLabels: { enabled: false }, legend: { show: false } };
+  const custAcqSeries = [customers?.newCount || 0, customers?.returningCount || 0];
 
   const goalData = [
     { label: "Revenue: $150K", pct: 78, color: "#0077b6" },
@@ -315,12 +501,12 @@ export default function Dashboard() {
     { text: "Asia-Pacific expansion review +15%", tag: "Strategy", btn: "Explore", color: "#22c55e" },
   ];
 
-  const fulfillSteps = [
-    { label: "Received", value: 312, color: "#0077b6" },
-    { label: "Processing", value: 45, color: "#f59e0b" },
-    { label: "Shipped", value: 198, color: "#f97316" },
-    { label: "Delivered", value: 52, color: "#22c55e" },
-    { label: "Completed", value: 17, color: "#0096c7" },
+  const fulfillSteps = fulfillmentCounts || [
+    { label: "Received", value: 0, color: "#0077b6" },
+    { label: "Processing", value: 0, color: "#f59e0b" },
+    { label: "Partially Shipped", value: 0, color: "#f97316" },
+    { label: "Fulfilled", value: 0, color: "#22c55e" },
+    { label: "Other", value: 0, color: "#0096c7" },
   ];
   return (
     <div className={isDark ? "dark" : ""}>
@@ -337,7 +523,7 @@ export default function Dashboard() {
               <ClientChart options={revByHourOpts} series={revByHourSeries} type="bar" height={230} />
             </ChartCard>
             <ChartCard title="Store Health Score" delay={2} className="lg:col-span-2">
-              <div className="flex justify-center"><ClientChart options={gaugeOpts} series={[78]} type="radialBar" height={220} /></div>
+              <div className="flex justify-center"><ClientChart options={gaugeOpts} series={[storeHealth || 78]} type="radialBar" height={220} /></div>
             </ChartCard>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -415,17 +601,17 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <ChartCard title="Inventory Health" delay={11}>
               <div className="grid grid-cols-4 gap-2 mb-3">
-                <div className="text-center"><div className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>1,248</div><div className="text-[10px]" style={{ color: "var(--text-secondary)" }}>Total</div></div>
-                <div className="text-center"><div className="text-lg font-bold" style={{ color: "#22c55e" }}>1,102</div><div className="text-[10px]" style={{ color: "var(--text-secondary)" }}>In Stock</div></div>
-                <div className="text-center"><div className="text-lg font-bold" style={{ color: "#f59e0b" }}>98</div><div className="text-[10px]" style={{ color: "var(--text-secondary)" }}>Low</div></div>
-                <div className="text-center"><div className="text-lg font-bold" style={{ color: "#ef4444" }}>48</div><div className="text-[10px]" style={{ color: "var(--text-secondary)" }}>Out</div></div>
+                <div className="text-center"><div className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>{inventory?.total || 0}</div><div className="text-[10px]" style={{ color: "var(--text-secondary)" }}>Total</div></div>
+                <div className="text-center"><div className="text-lg font-bold" style={{ color: "#22c55e" }}>{inventory?.inStock || 0}</div><div className="text-[10px]" style={{ color: "var(--text-secondary)" }}>In Stock</div></div>
+                <div className="text-center"><div className="text-lg font-bold" style={{ color: "#f59e0b" }}>{inventory?.lowStock || 0}</div><div className="text-[10px]" style={{ color: "var(--text-secondary)" }}>Low</div></div>
+                <div className="text-center"><div className="text-lg font-bold" style={{ color: "#ef4444" }}>{inventory?.outStock || 0}</div><div className="text-[10px]" style={{ color: "var(--text-secondary)" }}>Out</div></div>
               </div>
               <div className="text-xs font-medium mb-2" style={{ color: "var(--text-primary)" }}>Top SKUs at Risk</div>
               <div className="space-y-1">
-                {["Blue Hoodie XL","White Sneakers M","Black T-Shirt L"].map((s) => (
+                {(inventory?.lowStockProducts || [{title:"No low stock items",qty:0}]).map((s: any) => (
                   <div key={s} className="flex items-center justify-between text-xs p-1.5 rounded" style={{ background: "var(--bg-surface-secondary)" }}>
                     <span style={{ color: "var(--text-primary)" }}>{s}</span>
-                    <span className="font-medium" style={{ color: "#ef4444" }}>5d</span>
+                    <span className="font-medium" style={{ color: "#ef4444" }}>{s.qty || "n/a"}</span>
                   </div>
                 ))}
               </div>
@@ -437,7 +623,7 @@ export default function Dashboard() {
               <div className="flex justify-center mb-3"><ClientChart options={custAcqOpts} series={custAcqSeries} type="donut" height={160} /></div>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div><span style={{ color: "var(--text-secondary)" }}>New: </span><b>842</b> <span style={{ color: "#22c55e" }}>+5.1%</span></div>
-                <div><span style={{ color: "var(--text-secondary)" }}>CAC: </span><b>$12.40</b> <span style={{ color: "#22c55e" }}>-3%</span></div>
+                <div><span style={{ color: "var(--text-secondary)" }}>CAC: </span><b>{formatCurrency(metrics.aov)}</b> <span style={{ color: "#22c55e" }}>-3%</span></div>
                 <div><span style={{ color: "var(--text-secondary)" }}>LTV:CAC: </span><b>3.2x</b></div>
                 <div><span style={{ color: "var(--text-secondary)" }}>Churn: </span><b>14%</b> <span style={{ color: "#ef4444" }}>+3.2%</span></div>
               </div>
