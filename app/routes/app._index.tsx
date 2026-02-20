@@ -55,7 +55,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           totalPriceSet { shopMoney { amount } }
           subtotalPriceSet { shopMoney { amount } }
           customer { id numberOfOrders }
-          shippingLine { carrierIdentifier title }
+          shippingLines(first: 1) { edges { node { title } } }
         }}
       }
       prevOrders: orders(first: 250, query: $prev60) {
@@ -80,7 +80,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           id
           codeDiscount {
             ... on DiscountCodeBasic {
-              title codes(first: 5) { edges { node { code usageCount } } }
+              title codes(first: 5) { edges { node { code asyncUsageCount } } }
               usageLimit
               customerGets { value {
                 ... on DiscountPercentage { percentage }
@@ -173,14 +173,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     if (!d || !d.codes) return [];
     return d.codes.edges.map((c: any) => ({
       name: c.node.code,
-      uses: c.node.usageCount || 0,
+      uses: c.node.asyncUsageCount || 0,
     }));
   }).sort((a: any, b: any) => b.uses - a.uses).slice(0, 5);
 
   const totalDiscountOrders = discountNodes.reduce((s: number, e: any) => {
     const d = e.node.codeDiscount;
     if (!d || !d.codes) return s;
-    return s + d.codes.edges.reduce((ss: number, c: any) => ss + (c.node.usageCount || 0), 0);
+    return s + d.codes.edges.reduce((ss: number, c: any) => ss + (c.node.asyncUsageCount || 0), 0);
   }, 0);
 
   // === YoY REVENUE (monthly - current year using available data) ===
