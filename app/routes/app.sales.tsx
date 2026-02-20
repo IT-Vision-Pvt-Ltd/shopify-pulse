@@ -3,6 +3,20 @@ import { useLoaderData } from '@remix-run/react';
 import { Page, Layout, Card, Text, BlockStack, InlineStack, Box, Badge, InlineGrid, ProgressBar, DataTable, Divider } from '@shopify/polaris';
 import { authenticate } from '../shopify.server';
 import type { LoaderFunctionArgs } from '@remix-run/node';
+import { useState, useEffect, lazy, Suspense } from 'react';
+
+const Chart = typeof window !== 'undefined' ? lazy(() => import('react-apexcharts')) : () => null;
+
+function ClientChart(props: any) {
+  const [isClient, setIsClient] = useState(false);
+  useEffect(() => { setIsClient(true); }, []);
+  if (!isClient) return <div style={{ height: props.height || 200 }} />;
+  return (
+    <Suspense fallback={<div style={{ height: props.height || 200 }} />}>
+      <Chart {...props} />
+    </Suspense>
+  );
+}
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin } = await authenticate.admin(request);
@@ -35,45 +49,38 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const data = await response.json();
   const orders = data.data?.orders?.edges?.map((e: any) => e.node) || [];
 
-  // Calculate revenue metrics
   const grossRevenue = orders.reduce((sum: number, o: any) => sum + parseFloat(o.totalPriceSet?.shopMoney?.amount || '0'), 0);
   const totalDiscounts = orders.reduce((sum: number, o: any) => sum + parseFloat(o.totalDiscountsSet?.shopMoney?.amount || '0'), 0);
   const totalTax = orders.reduce((sum: number, o: any) => sum + parseFloat(o.totalTaxSet?.shopMoney?.amount || '0'), 0);
   const totalShipping = orders.reduce((sum: number, o: any) => sum + parseFloat(o.totalShippingPriceSet?.shopMoney?.amount || '0'), 0);
-  const refunds = orders.filter((o: any) => o.displayFinancialStatus === 'REFUNDED').length;
   const netRevenue = grossRevenue - totalDiscounts;
   const currency = orders[0]?.totalPriceSet?.shopMoney?.currencyCode || 'USD';
   const aov = orders.length > 0 ? grossRevenue / orders.length : 0;
 
-  // Revenue by day
   const revenueByDay: Record<string, number> = {};
   orders.forEach((o: any) => {
     const date = new Date(o.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     revenueByDay[date] = (revenueByDay[date] || 0) + parseFloat(o.totalPriceSet?.shopMoney?.amount || '0');
   });
 
-  // Revenue by payment method
   const paymentMethods: Record<string, number> = {};
   orders.forEach((o: any) => {
     const gateway = o.transactions?.[0]?.gateway || 'Unknown';
     paymentMethods[gateway] = (paymentMethods[gateway] || 0) + parseFloat(o.totalPriceSet?.shopMoney?.amount || '0');
   });
 
-  // Revenue by country
   const revenueByCountry: Record<string, number> = {};
   orders.forEach((o: any) => {
     const country = o.billingAddress?.country || 'Unknown';
     revenueByCountry[country] = (revenueByCountry[country] || 0) + parseFloat(o.totalPriceSet?.shopMoney?.amount || '0');
   });
 
-  // Orders by day of week
   const ordersByDayOfWeek: Record<string, number> = {};
   orders.forEach((o: any) => {
     const day = new Date(o.createdAt).toLocaleDateString('en-US', { weekday: 'short' });
     ordersByDayOfWeek[day] = (ordersByDayOfWeek[day] || 0) + 1;
   });
 
-  // Top orders
   const topOrders = orders.slice(0, 10).map((o: any) => ({
     name: o.name,
     customer: o.customer?.displayName || 'Guest',
@@ -83,7 +90,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   }));
 
   return json({
-    metrics: { grossRevenue, netRevenue, totalDiscounts, totalTax, totalShipping, refunds, aov, totalOrders: orders.length, currency },
+    metrics: { grossRevenue, netRevenue, totalDiscounts, totalTax, totalShipping, aov, totalOrders: orders.length, currency },
     revenueByDay,
     paymentMethods,
     revenueByCountry,
@@ -96,191 +103,210 @@ export default function SalesRevenue() {
   const { metrics, revenueByDay, paymentMethods, revenueByCountry, ordersByDayOfWeek, topOrders } = useLoaderData<typeof loader>();
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: metrics.currency }).format(val);
-  const maxRevDay = Math.max(...Object.values(revenueByDay), 1);
-  const maxPayment = Math.max(...Object.values(paymentMethods), 1);
+
+  const maxRevDay = Math.max(...Object.values(revenueByDay as Record<string, number>), 1);
+  const maxPayment = Math.max(...Object.values(paymentMethods as Record<string, number>), 1);
+  const maxCountryRev = Math.max(...Object.values(revenueByCountry as Record<string, number>), 1);
+
+  // Revenue Waterfall Chart
+  const waterfallOpts = {
+    chart: { type: 'bar' as const, height: 250, toolbar: { show: false } },
+    plotOptions: { bar: { borderRadius: 4, columnWidth: '50%', distributed: true } },
+    colors: ['#22c55e', '#ef4444', '#f59e0b', '#0096c7', '#6366f1'],
+    xaxis: { categories: ['Gross', 'Discounts', 'Tax', 'Shipping', 'Net'], labels: { style: { colors: '#6b8299', fontSize: '11px' } } },
+    yaxis: { labels: { style: { colors: '#6b8299', fontSize: '11px' }, formatter: (v: number) => formatCurrency(v) } },
+    grid: { borderColor: '#e2e8f0', strokeDashArray: 3 },
+    dataLabels: { enabled: false },
+    legend: { show: false },
+    tooltip: { y: { formatter: (v: number) => formatCurrency(v) } }
+  };
+  const waterfallSeries = [{ name: 'Amount', data: [metrics.grossRevenue, metrics.totalDiscounts, metrics.totalTax, metrics.totalShipping, metrics.netRevenue] }];
+
+  // Orders by Day of Week Chart
+  const dayOfWeekOpts = {
+    chart: { type: 'bar' as const, height: 200, toolbar: { show: false } },
+    plotOptions: { bar: { borderRadius: 4, columnWidth: '55%', distributed: true } },
+    colors: ['#6366f1', '#6366f1', '#6366f1', '#6366f1', '#6366f1', '#6366f1', '#6366f1'],
+    xaxis: { categories: Object.keys(ordersByDayOfWeek as Record<string, number>), labels: { style: { colors: '#6b8299', fontSize: '11px' } } },
+    yaxis: { labels: { style: { colors: '#6b8299', fontSize: '11px' } } },
+    grid: { borderColor: '#e2e8f0', strokeDashArray: 3 },
+    dataLabels: { enabled: true, style: { fontSize: '11px', colors: ['#fff'] } },
+    legend: { show: false },
+    tooltip: { y: { formatter: (v: number) => v + ' orders' } }
+  };
+  const dayOfWeekSeries = [{ name: 'Orders', data: Object.values(ordersByDayOfWeek as Record<string, number>) }];
+
+  // Revenue by Day Chart
+  const revByDayOpts = {
+    chart: { type: 'bar' as const, height: 200, toolbar: { show: false } },
+    plotOptions: { bar: { borderRadius: 3, horizontal: true, barHeight: '60%', distributed: true } },
+    colors: ['#0077b6'],
+    xaxis: { labels: { style: { colors: '#6b8299', fontSize: '11px' }, formatter: (v: number) => formatCurrency(v) } },
+    yaxis: { labels: { style: { colors: '#6b8299', fontSize: '11px' } } },
+    grid: { borderColor: '#e2e8f0', strokeDashArray: 3 },
+    dataLabels: { enabled: true, formatter: (v: number) => formatCurrency(v), style: { fontSize: '10px', colors: ['#fff'] } },
+    legend: { show: false },
+    tooltip: { y: { formatter: (v: number) => formatCurrency(v) } }
+  };
+  const revByDaySeries = [{
+    name: 'Revenue',
+    data: Object.entries(revenueByDay as Record<string, number>).slice(0, 10).map(([_, amount]) => amount)
+  }];
+  const revByDayCategories = Object.entries(revenueByDay as Record<string, number>).slice(0, 10).map(([date]) => date);
+
+  // Payment Methods Chart
+  const paymentOpts = {
+    chart: { type: 'donut' as const, height: 200 },
+    labels: Object.keys(paymentMethods as Record<string, number>),
+    colors: ['#0077b6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6'],
+    plotOptions: { pie: { donut: { size: '65%', labels: { show: true, total: { show: true, label: 'Total', formatter: () => formatCurrency(Object.values(paymentMethods as Record<string, number>).reduce((a: number, b: number) => a + b, 0)) } } } } },
+    dataLabels: { enabled: false },
+    legend: { position: 'bottom' as const, fontSize: '11px' }
+  };
+  const paymentSeries = Object.values(paymentMethods as Record<string, number>);
+
+  // Revenue by Country Chart
+  const countryOpts = {
+    chart: { type: 'bar' as const, height: 200, toolbar: { show: false } },
+    plotOptions: { bar: { borderRadius: 3, horizontal: true, barHeight: '60%', distributed: true } },
+    colors: ['#22c55e', '#0077b6', '#f59e0b', '#ef4444', '#8b5cf6'],
+    xaxis: { labels: { style: { colors: '#6b8299', fontSize: '11px' }, formatter: (v: number) => formatCurrency(v) } },
+    yaxis: { labels: { style: { colors: '#6b8299', fontSize: '11px' } } },
+    grid: { borderColor: '#e2e8f0', strokeDashArray: 3 },
+    dataLabels: { enabled: true, formatter: (v: number) => formatCurrency(v), style: { fontSize: '10px', colors: ['#fff'] } },
+    legend: { show: false },
+    tooltip: { y: { formatter: (v: number) => formatCurrency(v) } }
+  };
+  const countrySeries = [{
+    name: 'Revenue',
+    data: Object.entries(revenueByCountry as Record<string, number>).sort((a, b) => (b[1] as number) - (a[1] as number)).slice(0, 8).map(([_, amount]) => amount)
+  }];
+  const countryCategories = Object.entries(revenueByCountry as Record<string, number>).sort((a, b) => (b[1] as number) - (a[1] as number)).slice(0, 8).map(([country]) => country);
 
   return (
     <Page title="Sales & Revenue Analytics">
-      <BlockStack gap="600">
+      <BlockStack gap="400">
 
         {/* ROW 1: Revenue KPI Strip */}
-        <InlineGrid columns={{ xs: 1, sm: 2, md: 4 }} gap="400">
+        <InlineGrid columns={4} gap="400">
           <Card>
             <BlockStack gap="200">
-              <Text as="p" variant="bodySm" tone="subdued">Gross Revenue</Text>
+              <Text as="span" variant="bodySm" tone="subdued">Gross Revenue</Text>
               <Text as="p" variant="headingLg">{formatCurrency(metrics.grossRevenue)}</Text>
-              <Badge tone="success">{metrics.totalOrders} orders</Badge>
+              <Badge tone="success">{`${metrics.totalOrders} orders`}</Badge>
             </BlockStack>
           </Card>
           <Card>
             <BlockStack gap="200">
-              <Text as="p" variant="bodySm" tone="subdued">Net Revenue</Text>
+              <Text as="span" variant="bodySm" tone="subdued">Net Revenue</Text>
               <Text as="p" variant="headingLg">{formatCurrency(metrics.netRevenue)}</Text>
               <Text as="span" variant="bodySm" tone="subdued">After discounts</Text>
             </BlockStack>
           </Card>
           <Card>
             <BlockStack gap="200">
-              <Text as="p" variant="bodySm" tone="subdued">Total Discounts</Text>
+              <Text as="span" variant="bodySm" tone="subdued">Total Discounts</Text>
               <Text as="p" variant="headingLg">{formatCurrency(metrics.totalDiscounts)}</Text>
-              <Badge tone="attention">-{((metrics.totalDiscounts / metrics.grossRevenue) * 100 || 0).toFixed(1)}%</Badge>
+              <Badge tone="attention">{`-${((metrics.totalDiscounts / (metrics.grossRevenue || 1)) * 100).toFixed(1)}%`}</Badge>
             </BlockStack>
           </Card>
           <Card>
             <BlockStack gap="200">
-              <Text as="p" variant="bodySm" tone="subdued">AOV</Text>
+              <Text as="span" variant="bodySm" tone="subdued">AOV</Text>
               <Text as="p" variant="headingLg">{formatCurrency(metrics.aov)}</Text>
               <Text as="span" variant="bodySm" tone="subdued">Per order</Text>
             </BlockStack>
           </Card>
         </InlineGrid>
 
-        {/* ROW 2: Revenue Waterfall Breakdown */}
+        {/* ROW 2: Revenue Waterfall Chart */}
         <Card>
           <BlockStack gap="400">
             <Text as="h2" variant="headingMd">Revenue Waterfall</Text>
-            <InlineStack gap="200" align="start" blockAlign="end">
-              <BlockStack gap="100" inlineAlign="center">
-                <div style={{width:'60px',height:'100px',backgroundColor:'#22C55E',borderRadius:'4px'}} />
-                <Text as="span" variant="bodySm">Gross</Text>
-                <Text as="span" variant="bodySm" fontWeight="bold">{formatCurrency(metrics.grossRevenue)}</Text>
-              </BlockStack>
-              <BlockStack gap="100" inlineAlign="center">
-                <div style={{width:'60px',height:`${Math.max((metrics.totalDiscounts / metrics.grossRevenue) * 100, 5)}px`,backgroundColor:'#EF4444',borderRadius:'4px'}} />
-                <Text as="span" variant="bodySm">Discounts</Text>
-                <Text as="span" variant="bodySm" fontWeight="bold">-{formatCurrency(metrics.totalDiscounts)}</Text>
-              </BlockStack>
-              <BlockStack gap="100" inlineAlign="center">
-                <div style={{width:'60px',height:`${Math.max((metrics.totalTax / metrics.grossRevenue) * 100, 5)}px`,backgroundColor:'#F59E0B',borderRadius:'4px'}} />
-                <Text as="span" variant="bodySm">Tax</Text>
-                <Text as="span" variant="bodySm" fontWeight="bold">{formatCurrency(metrics.totalTax)}</Text>
-              </BlockStack>
-              <BlockStack gap="100" inlineAlign="center">
-                <div style={{width:'60px',height:`${Math.max((metrics.totalShipping / metrics.grossRevenue) * 100, 5)}px`,backgroundColor:'#3B82F6',borderRadius:'4px'}} />
-                <Text as="span" variant="bodySm">Shipping</Text>
-                <Text as="span" variant="bodySm" fontWeight="bold">{formatCurrency(metrics.totalShipping)}</Text>
-              </BlockStack>
-              <BlockStack gap="100" inlineAlign="center">
-                <div style={{width:'60px',height:'80px',backgroundColor:'#5C6AC4',borderRadius:'4px'}} />
-                <Text as="span" variant="bodySm">Net</Text>
-                <Text as="span" variant="bodySm" fontWeight="bold">{formatCurrency(metrics.netRevenue)}</Text>
-              </BlockStack>
-            </InlineStack>
+            <ClientChart
+              options={waterfallOpts}
+              series={waterfallSeries}
+              type="bar"
+              height={250}
+            />
           </BlockStack>
         </Card>
 
         {/* ROW 3: Revenue by Day + Payment Methods */}
-        <Layout>
-          <Layout.Section>
-            <Card>
-              <BlockStack gap="400">
-                <Text as="h2" variant="headingMd">Revenue by Day</Text>
-                <BlockStack gap="200">
-                  {Object.entries(revenueByDay).slice(0, 10).map(([date, amount]) => (
-                    <InlineStack key={date} align="space-between" blockAlign="center">
-                      <Text as="span" variant="bodySm">{date}</Text>
-                      <InlineStack gap="200" blockAlign="center">
-                        <div style={{width:'150px',height:'12px',backgroundColor:'#E4E5E7',borderRadius:'6px',overflow:'hidden'}}>
-                          <div style={{width:`${(amount as number / maxRevDay) * 100}%`,height:'100%',backgroundColor:'#5C6AC4',borderRadius:'6px'}} />
-                        </div>
-                        <Text as="span" variant="bodySm" fontWeight="semibold" alignment="end">{formatCurrency(amount as number)}</Text>
-                      </InlineStack>
-                    </InlineStack>
-                  ))}
-                </BlockStack>
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-          <Layout.Section variant="oneThird">
-            <Card>
-              <BlockStack gap="400">
-                <Text as="h2" variant="headingMd">Payment Methods</Text>
-                <BlockStack gap="300">
-                  {Object.entries(paymentMethods).map(([method, amount]) => (
-                    <BlockStack key={method} gap="100">
-                      <InlineStack align="space-between">
-                        <Text as="span" variant="bodySm">{method}</Text>
-                        <Text as="span" variant="bodySm" fontWeight="semibold">{formatCurrency(amount as number)}</Text>
-                      </InlineStack>
-                      <ProgressBar progress={(amount as number / maxPayment) * 100} tone="primary" size="small" />
-                    </BlockStack>
-                  ))}
-                </BlockStack>
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-        </Layout>
+        <InlineGrid columns={['twoThirds', 'oneThird']} gap="400">
+          <Card>
+            <BlockStack gap="400">
+              <Text as="h2" variant="headingMd">Revenue by Day</Text>
+              <ClientChart
+                options={{...revByDayOpts, yaxis: { ...revByDayOpts.yaxis, categories: revByDayCategories }}}
+                series={revByDaySeries}
+                type="bar"
+                height={200}
+              />
+            </BlockStack>
+          </Card>
+          <Card>
+            <BlockStack gap="400">
+              <Text as="h2" variant="headingMd">Payment Methods</Text>
+              <ClientChart
+                options={paymentOpts}
+                series={paymentSeries}
+                type="donut"
+                height={200}
+              />
+            </BlockStack>
+          </Card>
+        </InlineGrid>
 
         {/* ROW 4: Revenue by Country + Orders by Day of Week */}
-        <Layout>
-          <Layout.Section>
-            <Card>
-              <BlockStack gap="400">
-                <Text as="h2" variant="headingMd">Revenue by Country</Text>
-                <BlockStack gap="200">
-                  {Object.entries(revenueByCountry).sort((a, b) => (b[1] as number) - (a[1] as number)).slice(0, 8).map(([country, amount]) => (
-                    <InlineStack key={country} align="space-between" blockAlign="center">
-                      <Text as="span" variant="bodySm">{country}</Text>
-                      <InlineStack gap="200" blockAlign="center">
-                        <div style={{width:'120px',height:'10px',backgroundColor:'#E4E5E7',borderRadius:'5px',overflow:'hidden'}}>
-                          <div style={{width:`${(amount as number / Math.max(...Object.values(revenueByCountry))) * 100}%`,height:'100%',backgroundColor:'#22C55E',borderRadius:'5px'}} />
-                        </div>
-                        <Text as="span" variant="bodySm" fontWeight="semibold">{formatCurrency(amount as number)}</Text>
-                      </InlineStack>
-                    </InlineStack>
-                  ))}
-                </BlockStack>
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-          <Layout.Section variant="oneThird">
-            <Card>
-              <BlockStack gap="400">
-                <Text as="h2" variant="headingMd">Orders by Day of Week</Text>
-                <InlineStack gap="200" align="center">
-                  {Object.entries(ordersByDayOfWeek).map(([day, count]) => (
-                    <BlockStack key={day} gap="200" inlineAlign="center">
-                      <div style={{width:'30px',backgroundColor:'#5C6AC4',borderRadius:'4px 4px 0 0',height:`${Math.max((count as number / Math.max(...Object.values(ordersByDayOfWeek))) * 60, 8)}px`}} />
-                      <Text as="span" variant="bodySm">{day}</Text>
-                      <Text as="span" variant="bodySm" fontWeight="bold">{count as number}</Text>
-                    </BlockStack>
-                  ))}
-                </InlineStack>
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-        </Layout>
+        <InlineGrid columns={['twoThirds', 'oneThird']} gap="400">
+          <Card>
+            <BlockStack gap="400">
+              <Text as="h2" variant="headingMd">Revenue by Country</Text>
+              <ClientChart
+                options={{...countryOpts, yaxis: { ...countryOpts.yaxis, categories: countryCategories }}}
+                series={countrySeries}
+                type="bar"
+                height={200}
+              />
+            </BlockStack>
+          </Card>
+          <Card>
+            <BlockStack gap="400">
+              <Text as="h2" variant="headingMd">Orders by Day of Week</Text>
+              <ClientChart
+                options={dayOfWeekOpts}
+                series={dayOfWeekSeries}
+                type="bar"
+                height={200}
+              />
+            </BlockStack>
+          </Card>
+        </InlineGrid>
 
-        {/* ROW 5: Top Orders Table */}
+        {/* ROW 5: Recent Orders Table */}
         <Card>
           <BlockStack gap="400">
             <Text as="h2" variant="headingMd">Recent Orders</Text>
-            <BlockStack gap="200">
-              <InlineStack align="space-between">
-                <Text as="span" variant="bodySm" fontWeight="bold" tone="subdued">Order</Text>
-                <Text as="span" variant="bodySm" fontWeight="bold" tone="subdued">Customer</Text>
-                <Text as="span" variant="bodySm" fontWeight="bold" tone="subdued">Status</Text>
-                <Text as="span" variant="bodySm" fontWeight="bold" tone="subdued">Amount</Text>
-              </InlineStack>
-              <Divider />
-              {topOrders.map((order: any, i: number) => (
-                <InlineStack key={i} align="space-between" blockAlign="center">
-                  <Text as="span" variant="bodySm" fontWeight="semibold">{order.name}</Text>
-                  <Text as="span" variant="bodySm">{order.customer}</Text>
-                  <Badge tone={order.status === 'PAID' ? 'success' : order.status === 'PENDING' ? 'attention' : 'info'}>{order.status}</Badge>
-                  <Text as="span" variant="bodySm" fontWeight="semibold">{formatCurrency(parseFloat(order.amount))}</Text>
-                </InlineStack>
-              ))}
-            </BlockStack>
+            <DataTable
+              columnContentTypes={['text', 'text', 'text', 'numeric']}
+              headings={['Order', 'Customer', 'Status', 'Amount']}
+              rows={(topOrders as any[]).map((order: any) => [
+                order.name,
+                order.customer,
+                order.status,
+                formatCurrency(parseFloat(order.amount))
+              ])}
+            />
           </BlockStack>
         </Card>
 
-        {/* ROW 6: AOV Trend Analysis */}
+        {/* ROW 6: AOV Analysis */}
         <Card>
           <BlockStack gap="400">
             <InlineStack align="space-between">
               <Text as="h2" variant="headingMd">AOV Analysis</Text>
-              <Badge tone="success">Current: {formatCurrency(metrics.aov)}</Badge>
+              <Badge tone="success">{`Current: ${formatCurrency(metrics.aov)}`}</Badge>
             </InlineStack>
             <InlineGrid columns={3} gap="400">
               <BlockStack gap="200">
