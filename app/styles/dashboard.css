@@ -725,3 +725,106 @@ body {
   .lg\:col-span-5 { grid-column: span 5 / span 5; }
   .lg\:col-span-7 { grid-column: span 7 / span 7; }
 }
+
+/* Topbar Layout */
+.sp-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  gap: 16px;
+}
+.sp-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.sp-topbar-center {
+  flex: 1;
+  max-width: 480px;
+}
+.sp-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.sp-menu-btn {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  transition: background 0.2s;
+}
+.sp-menu-btn:hover {
+  background: var(--bg-surface-secondary);
+}
+@media (max-width: 1024px) {
+  .sp-menu-btn {
+    display: flex;
+  }
+}
+.sp-date-selector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface-secondary);
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.sp-topbar-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 10px;
+  color: var(--text-secondary);
+  transition: all 0.2s;
+  font-size: 13px;
+}
+.sp-topbar-btn:hover {
+  background: var(--bg-surface-secondary);
+}
+.sp-ask-ai-btn {
+  background: linear-gradient(135deg, #0077b6, #00b4d8);
+  color: #fff !important;
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 13px;
+}
+.sp-ask-ai-btn:hover {
+  opacity: 0.9;
+  background: linear-gradient(135deg, #0077b6, #00b4d8);
+}
+.sp-notification-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ef4444;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
