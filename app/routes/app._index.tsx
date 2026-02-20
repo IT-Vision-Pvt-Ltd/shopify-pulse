@@ -74,13 +74,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           }}}
         }}
       }
-      customersCount { count }}
-            }
-          }
-        }}
-      }
-    }
-  `, { variables: { cur30: `created_at:>${d30ISO}`, prev60: `created_at:>${d60ISO} created_at:<=${d30ISO}`,  } });
+      customersCount { count }
+    }`, { variables: { cur30: `created_at:>${d30ISO}`, prev60: `created_at:>${d60ISO} created_at:<=${d30ISO}`,  } });
 
   const shopData = await shopResponse.json();
   const curOrders = shopData.data?.currentOrders?.edges || [];
