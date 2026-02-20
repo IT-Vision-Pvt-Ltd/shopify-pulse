@@ -273,7 +273,7 @@ export default function SalesRevenue() {
   return (
     <div className="sp-layout">
       <Sidebar isOpen={sidebarOpen} onToggle={() => setSidebarOpen(!sidebarOpen)} activePage="sales" />
-      <div className="sp-main">
+      <div className="sp-main-content">
         <TopBar onMenuToggle={() => setSidebarOpen(!sidebarOpen)} isDark={isDark} onThemeToggle={toggleTheme} shopName={shopName} />
         <div className="sp-content">
 
