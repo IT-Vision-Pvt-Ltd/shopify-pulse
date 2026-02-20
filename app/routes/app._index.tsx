@@ -264,7 +264,7 @@ function Sidebar({ isOpen, onToggle, activePage }: { isOpen: boolean; onToggle: 
       <aside className={`sp-sidebar ${isOpen ? "open" : ""}`}>
         <div className="p-5 pb-3">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(13{s.qty || "n/a"}eg, #0096c7, #00b4d8)" }}>
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg, #0096c7, #00b4d8)" }}>
               <Zap className="w-5 h-5 text-white" />
             </div>
             <span className="text-white font-bold text-lg tracking-tight">ShopifyPulse</span>
@@ -313,7 +313,7 @@ function TopBar({ onMenuToggle, isDark, onThemeToggle, shopName }: { onMenuToggl
         <button className="sp-icon-btn" onClick={onThemeToggle} title="Toggle theme">
           {isDark ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
         </button>
-        <div className="w-9 h-9 rounded-full flex items-center justify-center cursor-pointer ml-1" style={{ background: "linear-gradient(13{s.qty || "n/a"}eg, #0077b6, #00b4d8)" }}>
+        <div className="w-9 h-9 rounded-full flex items-center justify-center cursor-pointer ml-1" style={{ background: "linear-gradient(135deg, #0077b6, #00b4d8)" }}>
           <span className="text-white text-sm font-semibold">{shopName.substring(0, 2).toUpperCase()}</span>
         </div>
       </div>
@@ -611,7 +611,7 @@ export default function Dashboard() {
                 {(inventory?.lowStockProducts || [{title:"No low stock items",qty:0}]).map((s: any) => (
                   <div key={s} className="flex items-center justify-between text-xs p-1.5 rounded" style={{ background: "var(--bg-surface-secondary)" }}>
                     <span style={{ color: "var(--text-primary)" }}>{s}</span>
-                    <span className="font-medium" style={{ color: "#ef4444" }}>{s.qty || "n/a"}</span>
+                    <span className="font-medium" style={{ color: "#ef4444" }}>5d</span>
                   </div>
                 ))}
               </div>
