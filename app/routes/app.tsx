@@ -1,15 +1,32 @@
-import { Outlet, useLoaderData, useLocation, useSearchParams } from "@remix-run/react";
 import type { HeadersFunction, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { AppProvider } from "@shopify/shopify-app-remix/react";
+import { Outlet, useLoaderData } from "@remix-run/react";
 import { authenticate } from "../shopify.server";
 import "../styles/global.css";
 import "../styles/dashboard.css";
 import { LayoutDashboard, TrendingUp, Package, Users, Megaphone, Warehouse, FileText, Sparkles, Settings, ChevronDown, Search, Bell, Moon } from "lucide-react";
+import prisma from "../db.server";
 
 export const headers: HeadersFunction = () => ({ "Cache-Control": "no-store" });
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const url = new URL(request.url);
+  const shop = url.searchParams.get("shop");
+  
+  // Debug: Check if session exists in DB before auth
+  if (shop) {
+    try {
+      const sessions = await prisma.session.findMany({
+        where: { shop: shop },
+        select: { id: true, shop: true, state: true, isOnline: true, accessToken: true }
+      });
+      console.log("[DEBUG] Sessions in DB for shop", shop, ":", JSON.stringify(sessions.map(s => ({ id: s.id, hasToken: !!s.accessToken }))));
+    } catch (e) {
+      console.log("[DEBUG] Error querying sessions:", e);
+    }
+  }
+  console.log("[DEBUG] Cookie header:", request.headers.get("cookie"));
+  
   const { session } = await authenticate.admin(request);
   return json({ apiKey: process.env.SHOPIFY_API_KEY || "", shop: session.shop, initials: "SP" });
 };
