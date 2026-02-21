@@ -311,3 +311,42 @@ body {
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
 }
+
+/* ===== DARK MODE ===== */
+.dark {
+  --sidebar-bg: #0B1929;
+  --topbar-bg: #111d2e;
+  --content-bg: #0b1622;
+  --card-bg: #111d2e;
+  --border-default: #1c2e40;
+  --text-primary: #e2ecf5;
+  --text-secondary: #6b8299;
+  --accent-blue: #0EA5E9;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.dark .sp-sidebar {
+  background: linear-gradient(180deg, #0a1628, #0f1f33 50%, #0b1929) !important;
+}
+
+.dark .sp-topbar {
+  background: var(--topbar-bg);
+  border-bottom-color: var(--border-default);
+  box-shadow: none;
+}
+
+.dark .sp-content {
+  background: var(--content-bg);
+}
+
+.dark .sp-search-box input {
+  background: #162435;
+  border-color: #1c2e40;
+  color: var(--text-primary);
+}
+
+.dark .sp-user-avatar {
+  background: #1c2e40;
+  color: #48cae4;
+}
