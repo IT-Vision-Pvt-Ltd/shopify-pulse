@@ -84,8 +84,8 @@ const S: Record<string, React.CSSProperties> = {
   kpiVal: { fontSize: 22, fontWeight: 700, margin: '4px 0' },
   badge: { display: 'inline-block', padding: '2px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600 },
   section: { fontSize: 13, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase' as const, letterSpacing: 1, margin: '28px 0 12px', borderBottom: '1px solid #e5e7eb', paddingBottom: 6 },
-  aiBanner: { background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', borderRadius: 12, padding: '16px 20px', marginBottom: 24, fontSize: 14, lineHeight: 1.6 },
-  aiTag: { background: 'rgba(99,102,241,0.15)', color: '#6366f1', padding: '4px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600, marginTop: 8, display: 'inline-block' },
+  aiBanner: { background: 'linear-gradient(135deg,#0c4a6e,#0e7490)', color: '#fff', borderRadius: 12, padding: '16px 20px', marginBottom: 24, fontSize: 14, lineHeight: 1.6 },
+  aiTag: { background: 'rgba(14,116,144,0.15)', color: '#0e7490', padding: '4px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600, marginTop: 8, display: 'inline-block' },
   full: { gridColumn: '1/-1' },
 };
 
@@ -348,7 +348,7 @@ export default function SalesRevenue() {
   });
 
   // Shared chart theme
-  const theme = { colors: ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd', '#e0e7ff', '#818cf8', '#4f46e5', '#4338ca'] };
+  const theme = { colors: ['#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#6366f1'] };
   const donutOpts = (labels: string[]) => ({ chart: { type: 'donut' as const }, labels, colors: theme.colors, legend: { position: 'bottom' as const }, dataLabels: { enabled: true }, plotOptions: { pie: { donut: { size: '55%' } } } });
   const barOpts = (cats: string[], horizontal = false) => ({ chart: { type: 'bar' as const, toolbar: { show: false } }, xaxis: { categories: cats }, colors: theme.colors, plotOptions: { bar: { horizontal, borderRadius: 4 } }, dataLabels: { enabled: false } });
 
@@ -379,22 +379,22 @@ export default function SalesRevenue() {
       <div style={S.grid3}>
         <div style={S.card}>
           <h3 style={S.cardTitle}>Revenue by Sales Channel</h3>
-          <CC type="donut" series={channelValues} options={donutOpts(channelLabels)} height={280} />
+          <CC type="donut" series={channelValues} options={{...donutOpts(channelLabels), colors: ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#14b8a6']}} height={280} />
         </div>
         <div style={S.card}>
           <h3 style={S.cardTitle}>Revenue by Traffic Source</h3>
-          <CC type="donut" series={trafficValues} options={donutOpts(trafficLabels)} height={280} />
+          <CC type="donut" series={trafficValues} options={{...donutOpts(trafficLabels), colors: ['#10b981','#f59e0b','#3b82f6','#334155','#ec4899']}} height={280} />
         </div>
         <div style={S.card}>
           <h3 style={S.cardTitle}>Revenue by Device Type</h3>
-          <CC type="bar" series={[{ name: 'Orders', data: deviceValues }]} options={barOpts(deviceLabels)} height={280} />
+          <CC type="bar" series={[{ name: 'Orders', data: deviceValues }]} options={{...barOpts(deviceLabels), colors: ['#ec4899','#14b8a6','#8b5cf6','#f59e0b','#3b82f6']}} height={280} />
         </div>
       </div>
 
       {/* Waterfall */}
       <div style={{ ...S.card, marginBottom: 24 }}>
         <h3 style={S.cardTitle}>Net Revenue Waterfall Chart</h3>
-        <CC type="rangeBar" series={[{ data: waterfallVals }]} options={{ chart: { type: 'rangeBar', toolbar: { show: false } }, plotOptions: { bar: { horizontal: false, borderRadius: 4, colors: { ranges: [{ from: 0, to: netRevenue, color: '#6366f1' }] } } }, xaxis: { categories: waterfallCats }, colors: ['#6366f1'], dataLabels: { enabled: false } }} height={300} />
+        <CC type="rangeBar" series={[{ data: waterfallVals }]} options={{ chart: { type: 'rangeBar', toolbar: { show: false } }, plotOptions: { bar: { horizontal: false, borderRadius: 4, colors: { ranges: [{ from: 0, to: netRevenue, color: '#14b8a6' }] } } }, xaxis: { categories: waterfallCats }, colors: ['#3b82f6'], dataLabels: { enabled: false } }} height={300} />
         <div style={S.aiTag}>Net: {fmt(netRevenue)}</div>
       </div>
 
@@ -402,11 +402,11 @@ export default function SalesRevenue() {
       <div style={S.grid2}>
         <div style={S.card}>
           <h3 style={S.cardTitle}>AOV Trend Line</h3>
-          <CC type="line" series={[{ name: 'AOV', data: aovTrend }]} options={{ chart: { type: 'line', toolbar: { show: false } }, xaxis: { categories: aovLabels }, colors: ['#6366f1'], stroke: { curve: 'smooth', width: 2 }, annotations: { yaxis: [{ y: aov, borderColor: '#f59e0b', label: { text: 'Avg ' + fmt(aov) } }] }, dataLabels: { enabled: false } }} height={280} />
+          <CC type="line" series={[{ name: 'AOV', data: aovTrend }]} options={{ chart: { type: 'line', toolbar: { show: false } }, xaxis: { categories: aovLabels }, colors: ['#14b8a6'], stroke: { curve: 'smooth', width: 2 }, annotations: { yaxis: [{ y: aov, borderColor: '#94a3b8', label: { text: 'Avg ' + fmt(aov) } }] }, dataLabels: { enabled: false } }} height={280} />
         </div>
         <div style={S.card}>
           <h3 style={S.cardTitle}>Orders by Day-of-Week</h3>
-          <CC type="bar" series={[{ name: 'Orders', data: dowCounts }]} options={barOpts(dowLabels)} height={280} />
+          <CC type="bar" series={[{ name: 'Orders', data: dowCounts }]} options={{...barOpts(dowLabels), colors: ['#0ea5e9','#10b981','#14b8a6','#3b82f6','#0e7490','#059669','#0891b2']}} height={280} />
         </div>
       </div>
 
@@ -414,11 +414,11 @@ export default function SalesRevenue() {
       <div style={S.grid2}>
         <div style={S.card}>
           <h3 style={S.cardTitle}>Revenue by Geography</h3>
-          <CC type="bar" series={[{ name: 'Revenue', data: geoValues }]} options={barOpts(geoLabels)} height={280} />
+          <CC type="bar" series={[{ name: 'Revenue', data: geoValues }]} options={{...barOpts(geoLabels), colors: ['#10b981','#14b8a6','#0ea5e9','#f59e0b','#ef4444','#8b5cf6','#3b82f6','#ec4899']}} height={280} />
         </div>
         <div style={S.card}>
           <h3 style={S.cardTitle}>Top 10 Cities</h3>
-          <CC type="bar" series={[{ name: 'Revenue', data: cityValues }]} options={barOpts(cityLabels, true)} height={280} />
+          <CC type="bar" series={[{ name: 'Revenue', data: cityValues }]} options={{...barOpts(cityLabels, true), colors: ['#0ea5e9','#14b8a6','#10b981','#3b82f6','#0e7490','#059669','#0891b2','#0284c7','#2563eb','#7c3aed']}} height={280} />
         </div>
       </div>
 
@@ -426,7 +426,7 @@ export default function SalesRevenue() {
       <div style={S.grid2}>
         <div style={S.card}>
           <h3 style={S.cardTitle}>Payment Methods</h3>
-          <CC type="donut" series={payValues} options={donutOpts(payLabels)} height={280} />
+          <CC type="donut" series={payValues} options={{...donutOpts(payLabels), colors: ['#1e3a5f','#10b981','#14b8a6','#ec4899']}} height={280} />
         </div>
         <div style={S.card}>
           <h3 style={S.cardTitle}>Currency Breakdown</h3>
@@ -438,11 +438,11 @@ export default function SalesRevenue() {
       <div style={S.grid2}>
         <div style={S.card}>
           <h3 style={S.cardTitle}>New vs Returning Revenue</h3>
-          <CC type="area" series={[{ name: 'New Customers', data: newRevByDow }, { name: 'Returning', data: retRevByDow }]} options={{ chart: { type: 'area', toolbar: { show: false }, stacked: false }, xaxis: { categories: dowLabels }, colors: ['#6366f1', '#a78bfa'], stroke: { curve: 'smooth', width: 2 }, fill: { type: 'gradient' }, dataLabels: { enabled: false } }} height={280} />
+          <CC type="area" series={[{ name: 'New Customers', data: newRevByDow }, { name: 'Returning', data: retRevByDow }]} options={{ chart: { type: 'area', toolbar: { show: false }, stacked: false }, xaxis: { categories: dowLabels }, colors: ['#3b82f6', '#f97316'], stroke: { curve: 'smooth', width: 2 }, fill: { type: 'gradient' }, dataLabels: { enabled: false } }} height={280} />
         </div>
         <div style={S.card}>
           <h3 style={S.cardTitle}>Refund/Return Rate Trend</h3>
-          <CC type="line" series={[{ name: 'Refund Volume', type: 'column', data: refundByDow }, { name: 'Return Rate %', type: 'line', data: refundRateByDow }]} options={{ chart: { type: 'line', toolbar: { show: false } }, xaxis: { categories: dowLabels }, colors: ['#6366f1', '#ef4444'], stroke: { width: [0, 3] }, yaxis: [{ title: { text: 'Refund Volume' } }, { opposite: true, title: { text: 'Rate %' } }], dataLabels: { enabled: false } }} height={280} />
+          <CC type="line" series={[{ name: 'Refund Volume', type: 'column', data: refundByDow }, { name: 'Return Rate %', type: 'line', data: refundRateByDow }]} options={{ chart: { type: 'line', toolbar: { show: false } }, xaxis: { categories: dowLabels }, colors: ['#f97316', '#ef4444'], stroke: { width: [0, 3] }, yaxis: [{ title: { text: 'Refund Volume' } }, { opposite: true, title: { text: 'Rate %' } }], dataLabels: { enabled: false } }} height={280} />
         </div>
       </div>
 
@@ -453,7 +453,7 @@ export default function SalesRevenue() {
       <div style={S.grid2}>
         <div style={S.card}>
           <h3 style={S.cardTitle}>Cart Abandonment Funnel</h3>
-          <CC type="bar" series={[{ name: 'Count', data: funnelData }]} options={{ chart: { type: 'bar', toolbar: { show: false } }, plotOptions: { bar: { horizontal: true, borderRadius: 4, distributed: true } }, xaxis: { categories: ['Sessions', 'Add to Cart', 'Checkout', 'Purchase'] }, colors: ['#6366f1', '#8b5cf6', '#a78bfa', '#22c55e'], dataLabels: { enabled: true }, legend: { show: false } }} height={250} />
+          <CC type="bar" series={[{ name: 'Count', data: funnelData }]} options={{ chart: { type: 'bar', toolbar: { show: false } }, plotOptions: { bar: { horizontal: true, borderRadius: 4, distributed: true } }, xaxis: { categories: ['Sessions', 'Add to Cart', 'Checkout', 'Purchase'] }, colors: ['#14b8a6', '#0d9488', '#5eead4', '#22c55e'], dataLabels: { enabled: true }, legend: { show: false } }} height={250} />
           <div style={S.aiTag}>Abandonment Rate: {abandonRate}%</div>
         </div>
         <div style={S.card}>
@@ -464,7 +464,7 @@ export default function SalesRevenue() {
             <div style={S.kpiCard}><div style={S.kpiLabel}>Cart-to-Order</div><div style={{ fontSize: 18, fontWeight: 700 }}>{cartToOrder.toFixed(1)}%</div></div>
             <div style={S.kpiCard}><div style={S.kpiLabel}>Avg Discount</div><div style={{ fontSize: 18, fontWeight: 700 }}>{fmt(avgDiscount)}</div></div>
           </div>
-          <CC type="bar" series={[{ name: '% of Orders', data: bucketValues }]} options={barOpts(bucketLabels)} height={200} />
+          <CC type="bar" series={[{ name: '% of Orders', data: bucketValues }]} options={{...barOpts(bucketLabels), colors: ['#10b981','#14b8a6','#0ea5e9','#f59e0b','#3b82f6','#8b5cf6','#ef4444']}} height={200} />
         </div>
       </div>
 
@@ -501,7 +501,7 @@ export default function SalesRevenue() {
       <div style={S.grid2}>
         <div style={S.card}>
           <h3 style={S.cardTitle}>Revenue Cohort Analysis</h3>
-          <CC type="heatmap" series={Object.entries(cohortMap).sort((a: any, b: any) => a[0].localeCompare(b[0])).slice(0, 8).map(([month, data]: any) => ({ name: month, data: Array.from({ length: 8 }, (_, i) => ({ x: 'Mo ' + i, y: Math.round((data[i] || 0) / 1000 * 10) / 10 })) }))} options={{ chart: { type: 'heatmap', toolbar: { show: false } }, colors: ['#6366f1'], dataLabels: { enabled: true, style: { fontSize: '11px' } }, xaxis: { type: 'category' }, plotOptions: { heatmap: { colorScale: { ranges: [{ from: 0, to: 2, color: '#e0e7ff', name: 'Low' }, { from: 2, to: 5, color: '#a78bfa', name: 'Med' }, { from: 5, to: 10, color: '#6366f1', name: 'High' }, { from: 10, to: 100, color: '#4338ca', name: 'Very High' }] } } } }} height={300} />
+          <CC type="heatmap" series={Object.entries(cohortMap).sort((a: any, b: any) => a[0].localeCompare(b[0])).slice(0, 8).map(([month, data]: any) => ({ name: month, data: Array.from({ length: 8 }, (_, i) => ({ x: 'Mo ' + i, y: Math.round((data[i] || 0) / 1000 * 10) / 10 })) }))} options={{ chart: { type: 'heatmap', toolbar: { show: false } }, colors: ['#3b82f6'], dataLabels: { enabled: true, style: { fontSize: '11px' } }, xaxis: { type: 'category' }, plotOptions: { heatmap: { colorScale: { ranges: [{ from: 0, to: 2, color: '#e2e8f0', name: '$0-2K' }, { from: 2, to: 4, color: '#3b82f6', name: '$2-4K' }, { from: 4, to: 6, color: '#10b981', name: '$4-6K' }, { from: 6, to: 8, color: '#f59e0b', name: '$6-8K' }, { from: 8, to: 100, color: '#ef4444', name: '$8K+' }] } } } }} height={300} />
         </div>
         <div style={S.card}>
           <h3 style={S.cardTitle}>Tax Breakdown by Region</h3>
@@ -517,7 +517,7 @@ export default function SalesRevenue() {
           <div style={S.kpiCard}><div style={S.kpiLabel}>Canceled Orders</div><div style={S.kpiVal}>{canceledOrders}</div><div style={{ fontSize: 12, color: '#6b7280' }}>{totalOrders > 0 ? (canceledOrders / totalOrders * 100).toFixed(1) : 0}%</div></div>
           <div style={S.kpiCard}><div style={S.kpiLabel}>Failed Payments</div><div style={S.kpiVal}>{failedPayments}</div><div style={{ fontSize: 12, color: '#6b7280' }}>{totalOrders > 0 ? (failedPayments / totalOrders * 100).toFixed(1) : 0}%</div></div>
           <div style={S.kpiCard}><div style={S.kpiLabel}>Revenue Lost</div><div style={S.kpiVal}>{fmt(canceledRevenue)}</div></div>
-          <div><CC type="donut" series={cancelValues as number[]} options={donutOpts(cancelLabels)} height={180} /></div>
+          <div><CC type="donut" series={cancelValues as number[]} options={{...donutOpts(cancelLabels), colors: ['#10b981','#3b82f6','#8b5cf6','#f59e0b']}} height={180} /></div>
         </div>
       </div>
 
@@ -532,12 +532,12 @@ export default function SalesRevenue() {
             <div style={S.kpiCard}><div style={S.kpiLabel}>Charged</div><div style={{ fontSize: 18, fontWeight: 700 }}>{fmt(shippingCharged)}</div></div>
             <div style={S.kpiCard}><div style={S.kpiLabel}>Cost</div><div style={{ fontSize: 18, fontWeight: 700 }}>{fmt(shippingCost)}</div></div>
           </div>
-          <CC type="bar" series={[{ name: 'Charged', data: shipCharged }, { name: 'Cost', data: shipCost }]} options={{ chart: { type: 'bar', toolbar: { show: false } }, xaxis: { categories: shipMonths }, colors: ['#6366f1', '#ef4444'], plotOptions: { bar: { borderRadius: 4 } }, dataLabels: { enabled: false } }} height={220} />
+          <CC type="bar" series={[{ name: 'Charged', data: shipCharged }, { name: 'Cost', data: shipCost }]} options={{ chart: { type: 'bar', toolbar: { show: false } }, xaxis: { categories: shipMonths }, colors: ['#3b82f6', '#ef4444'], plotOptions: { bar: { borderRadius: 4 } }, dataLabels: { enabled: false } }} height={220} />
           <div style={{ fontSize: 12, color: '#6b7280', marginTop: 8 }}>Margin: {fmt(shippingMargin)} ({shippingCharged > 0 ? (shippingMargin / shippingCharged * 100).toFixed(1) : 0}%)</div>
         </div>
         <div style={S.card}>
           <h3 style={S.cardTitle}>Hourly & Daily Revenue</h3>
-          <CC type="heatmap" series={heatSeries} options={{ chart: { type: 'heatmap', toolbar: { show: false } }, colors: ['#6366f1'], dataLabels: { enabled: false }, plotOptions: { heatmap: { colorScale: { ranges: [{ from: 0, to: 100, color: '#e0e7ff', name: 'Low' }, { from: 100, to: 500, color: '#a78bfa', name: 'Med' }, { from: 500, to: 2000, color: '#6366f1', name: 'High' }, { from: 2000, to: 100000, color: '#4338ca', name: 'Very High' }] } } } }} height={280} />
+          <CC type="heatmap" series={heatSeries} options={{ chart: { type: 'heatmap', toolbar: { show: false } }, colors: ['#3b82f6'], dataLabels: { enabled: false }, plotOptions: { heatmap: { colorScale: { ranges: [{ from: 0, to: 100, color: '#e0e7ff', name: 'Low' }, { from: 100, to: 500, color: '#a78bfa', name: 'Med' }, { from: 500, to: 2000, color: '#14b8a6', name: 'High' }, { from: 2000, to: 100000, color: '#0d9488', name: 'Very High' }] } } } }} height={280} />
         </div>
       </div>
 
@@ -549,7 +549,7 @@ export default function SalesRevenue() {
           <div style={S.kpiCard}><div style={S.kpiLabel}>Rev/Hr</div><div style={{ fontSize: 18, fontWeight: 700 }}>{fmt(revPerHr)}</div></div>
           <div style={S.kpiCard}><div style={S.kpiLabel}>Peak/Hr</div><div style={{ fontSize: 18, fontWeight: 700 }}>{(peakHr / 30).toFixed(1)}</div></div>
         </div>
-        <CC type="area" series={[{ name: 'Orders/Hr', data: velocityData }]} options={{ chart: { type: 'area', toolbar: { show: false } }, xaxis: { categories: velocityLabels }, colors: ['#6366f1'], stroke: { curve: 'smooth', width: 2 }, fill: { type: 'gradient', gradient: { opacityFrom: 0.5, opacityTo: 0.1 } }, annotations: { yaxis: [{ y: 2, borderColor: '#f59e0b', label: { text: 'Target: 2.0/hr' } }] }, dataLabels: { enabled: false } }} height={250} />
+        <CC type="area" series={[{ name: 'Orders/Hr', data: velocityData }]} options={{ chart: { type: 'area', toolbar: { show: false } }, xaxis: { categories: velocityLabels }, colors: ['#14b8a6'], stroke: { curve: 'smooth', width: 2 }, fill: { type: 'gradient', gradient: { opacityFrom: 0.5, opacityTo: 0.1 } }, annotations: { yaxis: [{ y: 2, borderColor: '#f59e0b', label: { text: 'Target: 2.0/hr' } }] }, dataLabels: { enabled: false } }} height={250} />
       </div>
 
       {/* Footer */}
