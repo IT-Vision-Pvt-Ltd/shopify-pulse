@@ -324,6 +324,34 @@ function AlertFeed() {
   );
 }
 
+
+function KPICard({ label, value, change, icon, delay, ...rest }: any) {
+  return (
+    <div className="sp-kpi-card" style={{padding: "16px", background: "white", borderRadius: "8px", border: "1px solid #e5e7eb"}}>
+      <div style={{fontSize: "12px", color: "#6b7280"}}>{label}</div>
+      <div style={{fontSize: "24px", fontWeight: "bold", marginTop: "4px"}}>{value}</div>
+      {change && <div style={{fontSize: "12px", color: change > 0 ? "#10b981" : "#ef4444", marginTop: "4px"}}>{change > 0 ? "+" : ""}{change}%</div>}
+    </div>
+  );
+}
+
+function ChartCard({ title, delay, className, children }: any) {
+  return (
+    <div className={className || ""} style={{padding: "16px", background: "white", borderRadius: "8px", border: "1px solid #e5e7eb"}}>
+      {title && <h3 style={{fontSize: "14px", fontWeight: "600", marginBottom: "12px"}}>{title}</h3>}
+      {children}
+    </div>
+  );
+}
+
+function AIBriefBanner() {
+  return (
+    <div className="sp-ai-banner" style={{padding: "12px 16px", background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)", borderRadius: "8px", color: "white", marginBottom: "8px"}}>
+      <p style={{margin: 0, fontSize: "14px"}}>AI-powered insights for your store</p>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { shopName, metrics, currency, revenueByHour, revenueByDay, ordersByDay, fulfillmentCounts, inventory, customers, discountCodes, totalDiscountOrders, monthlyRevenue, storeHealth, last7Days, last7Revenue, weeklyHeat,
       conversionFunnel,
