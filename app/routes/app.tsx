@@ -7,30 +7,10 @@ import { AppProvider } from "@shopify/shopify-app-remix/react";
 import "../styles/global.css";
 import "../styles/dashboard.css";
 import { LayoutDashboard, TrendingUp, Package, Users, Megaphone, Warehouse, FileText, Sparkles, Settings, ChevronDown, Search, Bell, Moon, Sun, Lock, Unlock } from "lucide-react";
-import prisma from "../db.server";
 
 export const headers: HeadersFunction = () => ({ "Cache-Control": "no-store" });
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const url = new URL(request.url);
-  const shop = url.searchParams.get("shop");
-  
-  // Debug: Check if session exists in DB before auth
-  if (shop) {
-    try {
-      const sessions = await prisma.session.findMany({
-        where: { shop: shop },
-        select: { id: true, shop: true, state: true, isOnline: true, accessToken: true }
-      });
-    } catch (e) {
-    }
-  }
-  
-  // Debug: log session from DB directly
-  if (shop) {
-    try {
-      const dbSession = await prisma.session.findUnique({ where: { id: "offline_" + shop } });
-  }
   const { session } = await authenticate.admin(request);
   return json({ apiKey: process.env.SHOPIFY_API_KEY || "", shop: session.shop, initials: "SP" });
 };
