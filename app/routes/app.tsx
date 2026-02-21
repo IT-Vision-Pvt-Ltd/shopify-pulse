@@ -10,7 +10,8 @@ import { LayoutDashboard, TrendingUp, Package, Users, Megaphone, Warehouse, File
 export const headers: HeadersFunction = () => ({ "Cache-Control": "no-store" });
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  return json({ apiKey: process.env.SHOPIFY_API_KEY || "", shop: "", initials: "SP" });
+  const { session } = await authenticate.admin(request);
+  return json({ apiKey: process.env.SHOPIFY_API_KEY || "", shop: session.shop, initials: "SP" });
 };
 
 const NAV = [
