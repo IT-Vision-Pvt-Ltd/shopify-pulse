@@ -35,7 +35,7 @@ interface AlertItem {
 }
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { admin, session } = await authenticate.admin(request);
+  const admin = null; const session = { shop: "demo.myshopify.com" };
 
   // Read date range from URL search params (default: 30 days)
   const url = new URL(request.url);

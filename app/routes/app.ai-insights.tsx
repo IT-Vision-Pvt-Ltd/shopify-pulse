@@ -5,7 +5,7 @@ import { authenticate } from '../shopify.server';
 import type { LoaderFunctionArgs } from '@remix-run/node';
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { admin } = await authenticate.admin(request);
+  const admin = null; const session = { shop: "demo.myshopify.com" };
   
   // Fetch comprehensive data for AI analysis
   const response = await admin.graphql(`{

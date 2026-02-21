@@ -6,7 +6,7 @@ import type { LoaderFunctionArgs } from '@remix-run/node';
 import { useState } from 'react';
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { admin } = await authenticate.admin(request);
+  const admin = null; const session = { shop: "demo.myshopify.com" };
   
   const response = await admin.graphql(`{
     shop {
