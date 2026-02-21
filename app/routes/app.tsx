@@ -2,6 +2,7 @@ import type { HeadersFunction, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Outlet, useLoaderData, useSearchParams, useLocation } from "@remix-run/react";
 import { authenticate } from "../shopify.server";
+import { AppProvider } from "@shopify/shopify-app-remix/react";
 import "../styles/global.css";
 import "../styles/dashboard.css";
 import { LayoutDashboard, TrendingUp, Package, Users, Megaphone, Warehouse, FileText, Sparkles, Settings, ChevronDown, Search, Bell, Moon } from "lucide-react";
