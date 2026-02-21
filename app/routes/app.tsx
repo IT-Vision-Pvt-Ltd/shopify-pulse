@@ -21,21 +21,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         where: { shop: shop },
         select: { id: true, shop: true, state: true, isOnline: true, accessToken: true }
       });
-      console.log("[DEBUG] Sessions in DB for shop", shop, ":", JSON.stringify(sessions.map(s => ({ id: s.id, hasToken: !!s.accessToken }))));
     } catch (e) {
-      console.log("[DEBUG] Error querying sessions:", e);
     }
   }
-  console.log("[DEBUG] Cookie header:", request.headers.get("cookie"));
   
   // Debug: log session from DB directly
   if (shop) {
     try {
       const dbSession = await prisma.session.findUnique({ where: { id: "offline_" + shop } });
-      console.log("[DEBUG] DB Session scope:", dbSession?.scope);
-      console.log("[DEBUG] Configured scopes:", process.env.SCOPES);
-      console.log("[DEBUG] Scope match:", dbSession?.scope === process.env.SCOPES);
-    } catch(e) { console.log("[DEBUG] scope check error:", e); }
   }
   const { session } = await authenticate.admin(request);
   return json({ apiKey: process.env.SHOPIFY_API_KEY || "", shop: session.shop, initials: "SP" });
