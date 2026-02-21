@@ -35,12 +35,7 @@ interface AlertItem {
 }
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  let admin: any, session: any;
-  try {
-    ({ admin, session } = await authenticate.admin(request));
-  } catch (error) {
-    throw redirect('/');
-  }
+  const { admin, session } = await authenticate.admin(request);
   // Read date range from URL search params (default: 30 days)
   const url = new URL(request.url);
   const dateRange = url.searchParams.get("dateRange") || "30";
