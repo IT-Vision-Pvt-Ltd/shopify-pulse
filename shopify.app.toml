@@ -1,7 +1,7 @@
 name = "GrowthPilot Ai"
 client_id = "3a973754197c2089a028abb6469130ca"
 application_url = "https://shopify-pulse-production.up.railway.app"
-embedded = true
+embedded = false
 
 [access_scopes]
 scopes = "read_analytics,read_customers,read_inventory,read_marketing_events,read_orders,read_products,read_reports"
