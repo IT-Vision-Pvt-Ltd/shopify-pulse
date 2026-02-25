@@ -91,7 +91,7 @@ export async function createSubscription(
         returnUrl: $returnUrl
         trialDays: $trialDays
         lineItems: $lineItems
-        test: true
+        test: process.env.NODE_ENV !== "production"
       ) {
         appSubscription {
           id

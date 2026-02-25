@@ -1,7 +1,7 @@
 name = "GrowthPilot Ai"
 client_id = "3a973754197c2089a028abb6469130ca"
 application_url = "https://shopify-pulse-production.up.railway.app"
-embedded = false
+embedded = true
 
 [access_scopes]
 scopes = "read_analytics,read_customers,read_inventory,read_marketing_events,read_orders,read_products,read_reports"
@@ -10,7 +10,7 @@ scopes = "read_analytics,read_customers,read_inventory,read_marketing_events,rea
 redirect_urls = ["https://shopify-pulse-production.up.railway.app/api/auth/callback", "https://shopify-pulse-production.up.railway.app/auth/callback"]
 
 [webhooks]
-api_version = "2024-01"
+api_version = "2025-01"
 
 [webhooks.subscriptions.compliance]
 topics = ["customers/data_request", "customers/redact", "shop/redact"]

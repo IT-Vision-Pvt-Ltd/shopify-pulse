@@ -48,6 +48,11 @@ async function fetchAllOrders(admin: any, queryFilter: string) {
   let cursor: string | null = null;
   for (let i = 0; i < 20; i++) {
     const resp: any = await admin.graphql(ORDERS_QUERY, { variables: { query: queryFilter, cursor } });
+    // Rate limit: check cost and throttle if needed
+    const cost = resp?.extensions?.cost;
+    if (cost && cost.throttleStatus?.currentlyAvailable < 100) {
+      await new Promise(r => setTimeout(r, 1000));
+    }
     const body = await resp.json();
     const data = body?.data?.orders;
     if (!data) break;
@@ -556,6 +561,16 @@ export default function SalesRevenue() {
       <div style={{ textAlign: 'center', padding: '20px 0', fontSize: 13, color: '#9ca3af' }}>
         Showing data for: <strong>Last 30 Days</strong> | Currency: <strong>{cur}</strong>
       </div>
+    </div>
+  );
+}
+
+export function ErrorBoundary() {
+  return (
+    <div style={{ padding: 40, fontFamily: "Inter, sans-serif" }}>
+      <h1 style={{ color: "#EF4444" }}>Something went wrong</h1>
+      <p>This page encountered an error. Please try refreshing or go back to the dashboard.</p>
+      <a href="/app" style={{ color: "#1a73e8" }}>? Back to Dashboard</a>
     </div>
   );
 }

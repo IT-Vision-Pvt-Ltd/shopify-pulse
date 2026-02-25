@@ -6,7 +6,7 @@ import type { LoaderFunctionArgs } from '@remix-run/node';
 import { useState } from 'react';
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const admin = null; const session = { shop: "demo.myshopify.com" };
+  const { admin, session } = await authenticate.admin(request);
   
   const response = await admin.graphql(`{
     shop {
@@ -180,5 +180,15 @@ export default function Settings() {
         </Layout.Section>
       </Layout>
     </Page>
+  );
+}
+
+export function ErrorBoundary() {
+  return (
+    <div style={{ padding: 40, fontFamily: "Inter, sans-serif" }}>
+      <h1 style={{ color: "#EF4444" }}>Something went wrong</h1>
+      <p>This page encountered an error. Please try refreshing or go back to the dashboard.</p>
+      <a href="/app" style={{ color: "#1a73e8" }}>? Back to Dashboard</a>
+    </div>
   );
 }

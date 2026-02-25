@@ -87,12 +87,11 @@ export default function App() {
   const { apiKey, initials } = useLoaderData<typeof loader>();
   const [searchParams] = useSearchParams();
   const location = useLocation();
-  const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('sp-dark-mode') === 'true';
-    }
-    return false;
-  });
+  const [darkMode, setDarkMode] = useState(false);
+  useEffect(() => {
+    const saved = localStorage.getItem('sp-dark-mode');
+    if (saved === 'true') setDarkMode(true);
+  }, []);
   const [layoutLocked, setLayoutLocked] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('sp-layout-locked') !== 'false';
@@ -119,7 +118,7 @@ export default function App() {
   const toggleLock = useCallback(() => setLayoutLocked(l => !l), []);
 
   return (
-    <AppProvider isEmbeddedApp={false} apiKey={apiKey}>
+    <AppProvider isEmbeddedApp={true} apiKey={apiKey}>
       <div className={`sp-app-layout${darkMode ? ' dark' : ''}`}>
         <Sidebar currentPath={location.pathname} qs={searchParams.toString()} />
         <div className="sp-main-area">

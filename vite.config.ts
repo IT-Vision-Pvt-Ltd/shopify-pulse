@@ -2,6 +2,11 @@ import { vitePlugin as remix } from "@remix-run/dev";
 import { defineConfig } from "vite";
 
 export default defineConfig({
+  test: {
+    globals: true,
+    environment: "node",
+    include: ["app/__tests__/**/*.test.ts"],
+  },
   plugins: [
     remix({
       future: {

@@ -138,3 +138,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 build/
+
+prisma/dev.sqlite
+prisma/dev.sqlite-journal

@@ -14,7 +14,6 @@ datasource db {
 model Shop {
   id              String   @id @default(cuid())
   shopifyDomain   String   @unique
-  accessToken     String
   name            String?
   email           String?
   plan            String   @default("free")

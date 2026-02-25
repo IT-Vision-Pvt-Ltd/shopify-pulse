@@ -51,6 +51,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     query DashboardData($cur30: String!, $prev60: String!) {
       shop { name currencyCode }
       currentOrders: orders(first: 250, query: $cur30) {
+        pageInfo { hasNextPage endCursor }
         edges { node {
           id createdAt
           displayFulfillmentStatus displayFinancialStatus
@@ -61,6 +62,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         }}
       }
       prevOrders: orders(first: 250, query: $prev60) {
+        pageInfo { hasNextPage endCursor }
         edges { node {
           id createdAt
           totalPriceSet { shopMoney { amount } }
@@ -80,8 +82,44 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     }`, { variables: { cur30: `created_at:>${d30ISO}`, prev60: `created_at:>${d60ISO} created_at:<=${d30ISO}`,  } });
 
   const shopData = await shopResponse.json();
-  const curOrders = shopData.data?.currentOrders?.edges || [];
-  const prevOrders = shopData.data?.prevOrders?.edges || [];
+  let curOrders = shopData.data?.currentOrders?.edges || [];
+  let prevOrders = shopData.data?.prevOrders?.edges || [];
+
+  // Pagination: fetch page 2 if needed (up to 500 orders total)
+  const curPageInfo = shopData.data?.currentOrders?.pageInfo;
+  if (curPageInfo?.hasNextPage && curPageInfo.endCursor) {
+    const page2 = await admin.graphql(`
+      query OrdersPage2($query: String!, $cursor: String!) {
+        orders(first: 250, after: $cursor, query: $query) {
+          edges { node {
+            id createdAt
+            displayFulfillmentStatus displayFinancialStatus
+            totalPriceSet { shopMoney { amount } }
+            subtotalPriceSet { shopMoney { amount } }
+            customer { id numberOfOrders }
+            shippingLines(first: 1) { edges { node { title } } }
+          }}
+        }
+      }`, { variables: { query: `created_at:>${d30ISO}`, cursor: curPageInfo.endCursor } });
+    const p2Data = await page2.json();
+    curOrders = [...curOrders, ...(p2Data.data?.orders?.edges || [])];
+  }
+
+  const prevPageInfo = shopData.data?.prevOrders?.pageInfo;
+  if (prevPageInfo?.hasNextPage && prevPageInfo.endCursor) {
+    const page2 = await admin.graphql(`
+      query PrevOrdersPage2($query: String!, $cursor: String!) {
+        orders(first: 250, after: $cursor, query: $query) {
+          edges { node {
+            id createdAt
+            totalPriceSet { shopMoney { amount } }
+            customer { id }
+          }}
+        }
+      }`, { variables: { query: `created_at:>${d60ISO} created_at:<=${d30ISO}`, cursor: prevPageInfo.endCursor } });
+    const p2Data = await page2.json();
+    prevOrders = [...prevOrders, ...(p2Data.data?.orders?.edges || [])];
+  }
   const products = shopData.data?.products?.edges || [];
 
   // === REVENUE & ORDERS ===
@@ -549,7 +587,7 @@ export default function Dashboard() {
             <ChartCard title="Traffic Sources" delay={4}>
               <ClientChart options={trafficOpts} series={trafficSeries} type="donut" height={230} />
             </ChartCard>
-            <ChartCard title="Conversion Funnel" delay={5}>
+            <ChartCard title="Conversion Funnel (Estimated)" delay={5}>
               <div className="space-y-2 py-2">
                 {funnelData.map((item, i) => (
                   <div key={i} className="flex items-center gap-2">
@@ -715,5 +753,15 @@ export default function Dashboard() {
           </footer>
         </main>
       </div>
+  );
+}
+
+export function ErrorBoundary() {
+  return (
+    <div style={{ padding: 40, fontFamily: "Inter, sans-serif" }}>
+      <h1 style={{ color: "#EF4444" }}>Something went wrong</h1>
+      <p>This page encountered an error. Please try refreshing or go back to the dashboard.</p>
+      <a href="/app" style={{ color: "#1a73e8" }}>? Back to Dashboard</a>
+    </div>
   );
 }

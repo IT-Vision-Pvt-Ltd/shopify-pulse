@@ -1,4 +1,8 @@
-import { useState, useEffect, Suspense, lazy } from 'react';
+import { useState, useEffect, Suspense, lazy, useMemo } from 'react';
+import { json, type LoaderFunctionArgs } from '@remix-run/node';
+import { useLoaderData } from '@remix-run/react';
+import { authenticate } from '../shopify.server';
+import { Package, TrendingUp, AlertTriangle, BarChart3, ArrowUpRight, ArrowDownRight, Layers, RotateCcw } from 'lucide-react';
 
 const Chart = typeof window !== 'undefined' ? lazy(() => import('react-apexcharts')) : (() => null) as any;
 
@@ -9,229 +13,570 @@ function CC(p: any) {
   return <Suspense fallback={<div style={{ height: p.height || 250 }} />}><Chart {...p} /></Suspense>;
 }
 
+interface ProductData {
+  id: string;
+  title: string;
+  status: string;
+  totalInventory: number;
+  vendor: string;
+  productType: string;
+  imageUrl: string | null;
+  revenue: number;
+  unitsSold: number;
+  growthRate: number;
+  refundAmount: number;
+  refundRate: number;
+  variants: { title: string; price: string; inventoryQuantity: number; sku: string; options: string }[];
+}
+
+export async function loader({ request }: LoaderFunctionArgs) {
+  const { admin } = await authenticate.admin(request);
+
+  const response = await admin.graphql(`{
+    products(first: 100, sortKey: CREATED_AT, reverse: true) {
+      edges { node {
+        id title status totalInventory vendor productType
+        variants(first: 20) { edges { node {
+          id title price inventoryQuantity sku
+          selectedOptions { name value }
+        }}}
+        images(first: 1) { edges { node { url } } }
+      }}
+    }
+    orders(first: 250, query: "created_at:>2025-01-01", sortKey: CREATED_AT, reverse: true) {
+      edges { node {
+        createdAt
+        totalPriceSet { shopMoney { amount } }
+        lineItems(first: 50) { nodes { title quantity originalUnitPriceSet { shopMoney { amount } } sku } }
+        totalRefundedSet { shopMoney { amount } }
+      }}
+    }
+  }`);
+
+  const data = await response.json();
+  const products = data.data.products.edges.map((e: any) => e.node);
+  const orders = data.data.orders.edges.map((e: any) => e.node);
+
+  const now = new Date();
+  const fifteenDaysAgo = new Date(now.getTime() - 15 * 86400000);
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000);
+
+  // Build revenue/units maps from line items
+  const revenueMap: Record<string, number> = {};
+  const unitsMap: Record<string, number> = {};
+  const revenueRecent: Record<string, number> = {};
+  const revenuePrior: Record<string, number> = {};
+  const refundByOrder: Record<string, number> = {};
+  const orderRevenueMap: Record<string, number> = {};
+
+  for (const order of orders) {
+    const orderDate = new Date(order.createdAt);
+    const refund = parseFloat(order.totalRefundedSet?.shopMoney?.amount || '0');
+    const orderTotal = parseFloat(order.totalPriceSet?.shopMoney?.amount || '0');
+
+    for (const item of order.lineItems.nodes) {
+      const title = item.title;
+      const qty = item.quantity || 0;
+      const price = parseFloat(item.originalUnitPriceSet?.shopMoney?.amount || '0');
+      const lineRevenue = qty * price;
+
+      revenueMap[title] = (revenueMap[title] || 0) + lineRevenue;
+      unitsMap[title] = (unitsMap[title] || 0) + qty;
+
+      if (orderDate >= fifteenDaysAgo) {
+        revenueRecent[title] = (revenueRecent[title] || 0) + lineRevenue;
+      } else if (orderDate >= thirtyDaysAgo) {
+        revenuePrior[title] = (revenuePrior[title] || 0) + lineRevenue;
+      }
+
+      // Distribute refund proportionally
+      if (refund > 0 && orderTotal > 0) {
+        const share = lineRevenue / orderTotal;
+        refundByOrder[title] = (refundByOrder[title] || 0) + refund * share;
+      }
+    }
+  }
+
+  // Process products
+  const productData: ProductData[] = products.map((p: any) => {
+    const revenue = revenueMap[p.title] || 0;
+    const unitsSold = unitsMap[p.title] || 0;
+    const recent = revenueRecent[p.title] || 0;
+    const prior = revenuePrior[p.title] || 0;
+    const growthRate = prior > 0 ? ((recent - prior) / prior) * 100 : recent > 0 ? 100 : 0;
+    const refundAmount = refundByOrder[p.title] || 0;
+    const refundRate = revenue > 0 ? (refundAmount / revenue) * 100 : 0;
+
+    return {
+      id: p.id,
+      title: p.title,
+      status: p.status,
+      totalInventory: p.totalInventory || 0,
+      vendor: p.vendor || 'Unknown',
+      productType: p.productType || 'Uncategorized',
+      imageUrl: p.images.edges[0]?.node?.url || null,
+      revenue,
+      unitsSold,
+      growthRate: Math.round(growthRate * 10) / 10,
+      refundAmount: Math.round(refundAmount * 100) / 100,
+      refundRate: Math.round(refundRate * 10) / 10,
+      variants: p.variants.edges.map((v: any) => ({
+        title: v.node.title,
+        price: v.node.price,
+        inventoryQuantity: v.node.inventoryQuantity || 0,
+        sku: v.node.sku || '',
+        options: v.node.selectedOptions.map((o: any) => `${o.name}: ${o.value}`).join(', '),
+      })),
+    };
+  });
+
+  // Sort by revenue for top 20
+  const top20 = [...productData].sort((a, b) => b.revenue - a.revenue).slice(0, 20);
+
+  // Inventory summary
+  const inventorySummary = {
+    inStock: productData.filter(p => p.totalInventory > 10).length,
+    lowStock: productData.filter(p => p.totalInventory > 0 && p.totalInventory <= 10).length,
+    outOfStock: productData.filter(p => p.totalInventory === 0).length,
+  };
+
+  // Vendor aggregation
+  const vendorMap: Record<string, { revenue: number; products: number; units: number }> = {};
+  for (const p of productData) {
+    if (!vendorMap[p.vendor]) vendorMap[p.vendor] = { revenue: 0, products: 0, units: 0 };
+    vendorMap[p.vendor].revenue += p.revenue;
+    vendorMap[p.vendor].products += 1;
+    vendorMap[p.vendor].units += p.unitsSold;
+  }
+  const vendors = Object.entries(vendorMap)
+    .map(([name, d]) => ({ name, ...d }))
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 10);
+
+  // BCG matrix data
+  const medianRevenue = productData.length > 0
+    ? [...productData].sort((a, b) => a.revenue - b.revenue)[Math.floor(productData.length / 2)].revenue
+    : 0;
+  const bcg = {
+    stars: productData.filter(p => p.revenue >= medianRevenue && p.growthRate >= 10).map(p => [p.revenue / 1000, p.growthRate]),
+    cashCows: productData.filter(p => p.revenue >= medianRevenue && p.growthRate < 10).map(p => [p.revenue / 1000, p.growthRate]),
+    questionMarks: productData.filter(p => p.revenue < medianRevenue && p.growthRate >= 10).map(p => [p.revenue / 1000, p.growthRate]),
+    dogs: productData.filter(p => p.revenue < medianRevenue && p.growthRate < 10).map(p => [p.revenue / 1000, p.growthRate]),
+  };
+
+  // Variant heatmap: top 10 products, their variants' inventory
+  const variantHeatmap = top20.slice(0, 10).map(p => ({
+    product: p.title.length > 25 ? p.title.slice(0, 25) + '…' : p.title,
+    variants: p.variants.map(v => ({ label: v.title, inventory: v.inventoryQuantity })),
+  }));
+
+  const totalRevenue = productData.reduce((s, p) => s + p.revenue, 0);
+  const totalUnits = productData.reduce((s, p) => s + p.unitsSold, 0);
+  const totalProducts = productData.length;
+  const avgOrderValue = orders.length > 0
+    ? orders.reduce((s: number, o: any) => s + parseFloat(o.totalPriceSet?.shopMoney?.amount || '0'), 0) / orders.length
+    : 0;
+
+  return json({
+    kpis: {
+      totalRevenue: Math.round(totalRevenue),
+      totalUnits,
+      totalProducts,
+      avgOrderValue: Math.round(avgOrderValue * 100) / 100,
+      inStock: inventorySummary.inStock,
+      lowStock: inventorySummary.lowStock,
+      outOfStock: inventorySummary.outOfStock,
+    },
+    top20,
+    bcg,
+    vendors,
+    variantHeatmap,
+    products: productData,
+  });
+}
+
 export default function ProductsPage() {
+  const { kpis, top20, bcg, vendors, variantHeatmap, products } = useLoaderData<typeof loader>();
   const [tab, setTab] = useState('performance');
-  const tabs = ['performance','margins','inventory','returns'];
+  const tabs = [
+    { key: 'performance', label: 'Performance', icon: TrendingUp },
+    { key: 'margins', label: 'Margins', icon: BarChart3 },
+    { key: 'inventory', label: 'Inventory', icon: Package },
+    { key: 'returns', label: 'Returns', icon: RotateCcw },
+  ];
+
+  const topProducts = useMemo(() => top20, [top20]);
 
   return (
     <div className="sp-page">
       <div className="sp-page-header">
-        <div><h1>Product Intelligence</h1><p className="sp-subtitle">Deep-dive into product performance, margins, inventory and returns.</p></div>
+        <div>
+          <h1><Package size={24} style={{ display: 'inline', marginRight: 8, verticalAlign: 'middle' }} />Product Intelligence</h1>
+          <p className="sp-subtitle">Deep-dive into product performance, margins, inventory and returns — powered by real store data.</p>
+        </div>
+      </div>
+
+      <div className="sp-kpi-row">
+        {[
+          { l: 'TOTAL REVENUE', v: `$${(kpis.totalRevenue / 1000).toFixed(1)}K`, cl: '#10b981', icon: TrendingUp },
+          { l: 'UNITS SOLD', v: kpis.totalUnits.toLocaleString(), cl: '#1a73e8', icon: Package },
+          { l: 'PRODUCTS', v: kpis.totalProducts.toString(), cl: '#8b5cf6', icon: Layers },
+          { l: 'AVG ORDER VALUE', v: `$${kpis.avgOrderValue.toFixed(2)}`, cl: '#f59e0b', icon: BarChart3 },
+          { l: 'LOW STOCK', v: kpis.lowStock.toString(), cl: kpis.lowStock > 5 ? '#ef4444' : '#f59e0b', icon: AlertTriangle },
+          { l: 'OUT OF STOCK', v: kpis.outOfStock.toString(), cl: kpis.outOfStock > 0 ? '#ef4444' : '#10b981', icon: AlertTriangle },
+        ].map((k, i) => (
+          <div key={i} className="sp-kpi-card">
+            <span className="sp-kpi-label"><k.icon size={14} style={{ marginRight: 4 }} />{k.l}</span>
+            <div className="sp-kpi-value" style={{ color: k.cl }}>{k.v}</div>
+          </div>
+        ))}
       </div>
 
       <div className="sp-tabs">
         {tabs.map(t => (
-          <button key={t} className={`sp-tab-btn ${tab===t?'active':''}`} onClick={()=>setTab(t)}>
-            {t.charAt(0).toUpperCase()+t.slice(1)}
+          <button key={t.key} className={`sp-tab-btn ${tab === t.key ? 'active' : ''}`} onClick={() => setTab(t.key)}>
+            <t.icon size={14} style={{ marginRight: 4 }} />{t.label}
           </button>
         ))}
       </div>
 
-      {tab === 'performance' && (
-        <>
-          <div className="sp-ai-banner">
-            <div className="sp-ai-banner-icon">AI</div>
-            <div className="sp-ai-banner-content">
-              <h3>Product Shift Alert</h3>
-              <p>Wireless Headphones Pro moved from Question Mark to Star. Dead stock alert: 12 SKUs have zero sales in 60+ days.</p>
-            </div>
-          </div>
+      {tab === 'performance' && <PerformanceTab top20={topProducts} bcg={bcg} />}
+      {tab === 'margins' && <MarginsTab vendors={vendors} products={products} />}
+      {tab === 'inventory' && <InventoryTab products={products} variantHeatmap={variantHeatmap} kpis={kpis} />}
+      {tab === 'returns' && <ReturnsTab products={products} />}
+    </div>
+  );
+}
 
-          <div className="sp-card">
-            <h3>BCG Product Matrix</h3>
-            <CC type="scatter" height={350} series={[{name:'Stars',data:[[75,22],[85,18],[90,25]]},{name:'Cash Cows',data:[[80,5],[70,3],[65,4]]},{name:'Question Marks',data:[[20,20],[30,18],[25,22]]},{name:'Dogs',data:[[15,2],[10,3],[20,1]]}]} options={{chart:{toolbar:{show:false}},colors:['#10b981','#1a73e8','#f59e0b','#ef4444'],xaxis:{title:{text:'Revenue ($K)'},min:0,max:100},yaxis:{title:{text:'Growth Rate (%)'},min:-5,max:30},markers:{size:12},annotations:{yaxis:[{y:10,borderColor:'#94a3b8',label:{text:'Growth Threshold'}}],xaxis:[{x:50,borderColor:'#94a3b8',label:{text:'Revenue Threshold'}}]},legend:{position:'top'}}} />
+function PerformanceTab({ top20, bcg }: any) {
+  return (
+    <>
+      {top20.length > 0 && (
+        <div className="sp-ai-banner">
+          <div className="sp-ai-banner-icon">AI</div>
+          <div className="sp-ai-banner-content">
+            <h3>Product Insights</h3>
+            <p>
+              Top performer: <strong>{top20[0]?.title}</strong> at ${(top20[0]?.revenue / 1000).toFixed(1)}K revenue.
+              {bcg.dogs.length > 0 && ` ${bcg.dogs.length} products in the "Dogs" quadrant may need attention.`}
+              {top20.filter((p: any) => p.growthRate > 20).length > 0 && ` ${top20.filter((p: any) => p.growthRate > 20).length} products growing >20%.`}
+            </p>
           </div>
-
-          <div className="sp-card">
-            <h3>Top 20 Products by Revenue</h3>
-            <CC type="bar" height={400} series={[{name:'Revenue',data:[18200,15400,12800,11200,9800,8600,7400,6800,6200,5800,5200,4800,4400,4000,3600,3200,2800,2400,2000,1800]}]} options={{chart:{toolbar:{show:false}},plotOptions:{bar:{horizontal:true,barHeight:'70%'}},colors:['#10b981'],xaxis:{labels:{formatter:(v:number)=>'$'+(v/1000).toFixed(1)+'K'}},yaxis:{categories:['Wireless Headphones Pro','Organic Cotton Tee','Smart Watch Elite','Running Shoes Ultra','Laptop Stand Pro','Bamboo Water Bottle','LED Desk Lamp','Yoga Mat Premium','Phone Case Ultra','Bluetooth Speaker','Fitness Tracker','Sunglasses Classic','Backpack Travel','Coffee Maker Pro','Kitchen Scale','Notebook Set','USB Cable Pack','Mouse Pad XL','Water Filter','Pen Set Gold']}}} />
-          </div>
-
-          <div className="sp-card">
-            <h3>Dead Stock / Bottom 20</h3>
-            <CC type="bar" height={300} series={[{name:'Days on Hand',data:[180,165,150,142,130,125,118,112,105,98]}]} options={{chart:{toolbar:{show:false}},plotOptions:{bar:{horizontal:true,barHeight:'60%',colors:{ranges:[{from:120,to:200,color:'#ef4444'},{from:80,to:119,color:'#f59e0b'},{from:0,to:79,color:'#10b981'}]}}},colors:['#ef4444'],xaxis:{title:{text:'Days on Hand'}},yaxis:{categories:['Widget A','Gadget B','Tool C','Item D','Part E','Thing F','Piece G','Unit H','Object I','Device J']}}} />
-          </div>
-
-          <div className="sp-card">
-            <h3>Product Velocity Table</h3>
-            <table className="sp-table"><thead><tr><th>Product</th><th>Units/Day</th><th>Stock</th><th>Days Left</th><th>Status</th></tr></thead><tbody>
-              {[['Wireless Headphones',8.2,180,22,'ok'],['Cotton Tee',6.5,45,7,'warning'],['Smart Watch',5.1,12,2,'critical'],['Running Shoes',4.8,210,44,'ok'],['Laptop Stand',3.2,85,27,'ok']].map((r:any,i)=>(
-                <tr key={i}><td>{r[0]}</td><td>{r[1]}</td><td>{r[2]}</td><td>{r[3]}</td><td><span className={`sp-badge sp-badge-${r[4]}`}>{r[4]}</span></td></tr>
-              ))}
-            </tbody></table>
-          </div>
-
-          <div className="sp-grid sp-grid-2">
-            <div className="sp-card">
-              <h3>Variant Heatmap (Size x Color)</h3>
-              <div className="sp-heatmap-grid">
-                <div className="sp-hm-header"><span></span>{['Black','White','Red','Blue','Green'].map(c=><span key={c}>{c}</span>)}</div>
-                {['XS','S','M','L','XL'].map((sz,i)=>(
-                  <div key={i} className="sp-hm-row"><span className="sp-hm-label">{sz}</span>
-                    {[12,28,45,38,15,8,35,62,48,22,5,18,52,42,18,15,30,55,40,20,3,12,28,22,8].slice(i*5,i*5+5).map((v,j)=>(
-                      <span key={j} className="sp-hm-cell" style={{background:v>40?'#10b981':v>20?'#34d399':v>10?'#fbbf24':'#ef4444',color:v>30?'#fff':'#333'}}>{v}</span>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="sp-card">
-              <h3>Product Margin Comparison</h3>
-              <CC type="bar" height={250} series={[{name:'Margin %',data:[42,38,35,32,28,25,22,18]}]} options={{chart:{toolbar:{show:false}},plotOptions:{bar:{horizontal:true,barHeight:'60%'}},colors:['#10b981'],xaxis:{title:{text:'Margin %'},max:50},yaxis:{categories:['Headphones','Tee','Watch','Shoes','Stand','Bottle','Lamp','Mat']},annotations:{xaxis:[{x:30,borderColor:'#ef4444',label:{text:'Store Avg: 30%'}}]}}} />
-            </div>
-          </div>
-
-          <div className="sp-grid sp-grid-3">
-            <div className="sp-card">
-              <h3>Collection Performance</h3>
-              <CC type="bar" height={250} series={[{name:'Revenue',data:[28400,22100,18600,14200,9800]},{name:'Units',data:[420,380,310,250,180]}]} options={{chart:{toolbar:{show:false}},plotOptions:{bar:{columnWidth:'50%'}},colors:['#1a73e8','#10b981'],xaxis:{categories:['Summer','Winter','Sport','Casual','Formal']},legend:{position:'top'}}} />
-            </div>
-            <div className="sp-card">
-              <h3>Product Return Rate</h3>
-              <CC type="scatter" height={250} series={[{name:'Products',data:[[8200,2.1],[12400,3.5],[5800,1.8],[18200,4.2],[9600,2.8],[15400,5.1],[7200,1.5],[11000,3.2]]}]} options={{chart:{toolbar:{show:false}},colors:['#8b5cf6'],xaxis:{title:{text:'Revenue ($)'},labels:{formatter:(v:number)=>'$'+(v/1000)+'K'}},yaxis:{title:{text:'Return Rate (%)'}},markers:{size:8}}} />
-            </div>
-            <div className="sp-card">
-              <h3>Price Elasticity</h3>
-              <div className="sp-stats-grid">
-                {[{l:'Elastic Products',v:'23',c:'Price Sensitive'},{l:'Inelastic',v:'18',c:'Price Stable'},{l:'Avg Elasticity',v:'-1.4',c:'Moderate'},{l:'Optimal Price Range',v:'$45-$85',c:'Sweet Spot'}].map((s,i)=>(
-                  <div key={i} className="sp-stat-item"><div className="sp-stat-label">{s.l}</div><div className="sp-stat-value">{s.v}</div><div className="sp-stat-change">{s.c}</div></div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </>
+        </div>
       )}
 
-      {tab === 'margins' && (
-        <>
-          <div className="sp-kpi-row">
-            {[{l:'GROSS MARGIN $',v:'$52.8K',c:'+15%',cl:'#10b981'},{l:'GROSS MARGIN %',v:'37.1%',c:'+2.1%',cl:'#10b981'},{l:'DISCOUNT % OF REV',v:'8.2%',c:'+1.1%',cl:'#ef4444'},{l:'REFUND % OF REV',v:'2.4%',c:'+0.3%',cl:'#ef4444'},{l:'CONTRIBUTION MARGIN',v:'$48.2K',c:'+12%',cl:'#10b981'},{l:'NEG MARGIN SKUs',v:'14',c:'+3',cl:'#ef4444'}].map((k,i)=>(
-              <div key={i} className="sp-kpi-card"><span className="sp-kpi-label">{k.l}</span><div className="sp-kpi-value">{k.v}</div><span className="sp-kpi-change" style={{color:k.cl}}>{k.c}</span></div>
-            ))}
-          </div>
-
-          <div className="sp-card">
-            <h3>Margin Waterfall</h3>
-            <CC type="bar" height={300} series={[{name:'Margin',data:[{x:'Gross Revenue',y:[0,142300]},{x:'COGS',y:[89500,142300]},{x:'Discounts',y:[78200,89500]},{x:'Returns',y:[72400,78200]},{x:'Shipping',y:[66800,72400]},{x:'Net Margin',y:[0,52800]}]}]} options={{chart:{toolbar:{show:false}},colors:['#10b981'],plotOptions:{bar:{columnWidth:'55%'}},xaxis:{labels:{style:{fontSize:'12px'}}},yaxis:{labels:{formatter:(v:number)=>'$'+(v/1000).toFixed(0)+'K'}}}} />
-          </div>
-
-          <div className="sp-card">
-            <h3>Margin % Trend (Weekly)</h3>
-            <CC type="line" height={250} series={[{name:'Margin %',data:[34,35,33,36,35,37,38,36,37,38,37,37]},{name:'Store Avg',data:Array(12).fill(36)}]} options={{chart:{toolbar:{show:false}},stroke:{width:[3,2],dashArray:[0,5],curve:'smooth'},colors:['#8b5cf6','#ef4444'],xaxis:{categories:['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10','W11','W12']},yaxis:{min:30,max:42,labels:{formatter:(v:number)=>v+'%'}},legend:{position:'top'}}} />
-          </div>
-
-          <div className="sp-grid sp-grid-2">
-            <div className="sp-card">
-              <h3>Margin by Vendor (Ranked)</h3>
-              <CC type="bar" height={250} series={[{name:'Margin %',data:[45,42,38,35,32,28,25,22]}]} options={{chart:{toolbar:{show:false}},plotOptions:{bar:{horizontal:true,barHeight:'60%'}},colors:['#1a73e8'],xaxis:{max:50},yaxis:{categories:['VendorA','VendorB','VendorC','VendorD','VendorE','VendorF','VendorG','VendorH']}}} />
-            </div>
-            <div className="sp-card">
-              <h3>Discount vs Margin Tradeoff</h3>
-              <CC type="scatter" height={250} series={[{name:'Sweet Spot',data:[[5,42],[8,38],[10,35],[12,32]]},{name:'Danger Zone',data:[[18,22],[22,18],[25,15],[30,12]]}]} options={{chart:{toolbar:{show:false}},colors:['#10b981','#ef4444'],xaxis:{title:{text:'Discount %'},max:35},yaxis:{title:{text:'Margin %'},max:50},markers:{size:10},legend:{position:'top'}}} />
-            </div>
-          </div>
-
-          <div className="sp-card">
-            <h3>SKU-Level Margin & Leak Table</h3>
-            <table className="sp-table"><thead><tr><th>SKU</th><th>Product</th><th>Revenue</th><th>COGS</th><th>Margin %</th><th>Disc %</th><th>Action</th></tr></thead><tbody>
-              {[['SKU001','Headphones','$18.2K','$10.5K','42%','5%','ok'],['SKU002','Cotton Tee','$15.4K','$9.8K','36%','12%','review'],['SKU003','Smart Watch','$12.8K','$9.6K','25%','20%','stop-disc'],['SKU004','Running Shoes','$11.2K','$7.8K','30%','8%','ok'],['SKU005','Widget X','$2.1K','$2.4K','-14%','25%','remove']].map((r,i)=>(
-                <tr key={i}><td>{r[0]}</td><td>{r[1]}</td><td>{r[2]}</td><td>{r[3]}</td><td style={{color:String(r[4]).includes('-')?'#ef4444':'#10b981'}}>{r[4]}</td><td>{r[5]}</td><td><span className={`sp-badge sp-badge-${r[6]}`}>{r[6]==='stop-disc'?'Stop Discount':r[6]==='remove'?'Remove':r[6]==='review'?'Review':'OK'}</span></td></tr>
-              ))}
-            </tbody></table>
-          </div>
-        </>
-      )}
-
-      {tab === 'inventory' && (
-        <>
-          <div className="sp-kpi-row">
-            {[{l:'TOTAL SKUs',v:'342',c:'',cl:'#374151'},{l:'IN STOCK',v:'285',c:'83%',cl:'#10b981'},{l:'LOW STOCK',v:'38',c:'11%',cl:'#f59e0b'},{l:'OUT OF STOCK',v:'19',c:'6%',cl:'#ef4444'},{l:'INVENTORY VALUE',v:'$284.5K',c:'',cl:'#1a73e8'},{l:'AVG WEEKS COVER',v:'6.2',c:'+0.8',cl:'#10b981'}].map((k,i)=>(
-              <div key={i} className="sp-kpi-card"><span className="sp-kpi-label">{k.l}</span><div className="sp-kpi-value">{k.v}</div><span className="sp-kpi-change" style={{color:k.cl}}>{k.c}</span></div>
-            ))}
-          </div>
-
-          <div className="sp-card">
-            <h3>Stockout Risk Heatmap (SKU x Weeks)</h3>
-            <div className="sp-heatmap-grid">
-              <div className="sp-hm-header"><span></span>{['Wk1','Wk2','Wk3','Wk4','Wk5','Wk6'].map(w=><span key={w}>{w}</span>)}</div>
-              {[{s:'SKU001',d:['ok','ok','warning','critical','critical','critical']},{s:'SKU002',d:['ok','ok','ok','warning','warning','critical']},{s:'SKU003',d:['ok','ok','ok','ok','warning','warning']},{s:'SKU004',d:['ok','ok','ok','ok','ok','ok']},{s:'SKU005',d:['warning','critical','critical','critical','critical','critical']}].map((r,i)=>(
-                <div key={i} className="sp-hm-row"><span className="sp-hm-label">{r.s}</span>{r.d.map((v,j)=>(<span key={j} className="sp-hm-cell" style={{background:v==='ok'?'#10b981':v==='warning'?'#f59e0b':'#ef4444',color:'#fff'}}>{v}</span>))}</div>
-              ))}
-            </div>
-          </div>
-
-          <div className="sp-card">
-            <h3>Inventory Aging Distribution</h3>
-            <CC type="bar" height={260} series={[{name:'0-30d',data:[120,85,95,110,75]},{name:'31-60d',data:[45,35,40,38,28]},{name:'61-90d',data:[22,18,15,20,12]},{name:'91-120d',data:[8,12,10,8,6]},{name:'120d+',data:[5,8,6,4,3]}]} options={{chart:{toolbar:{show:false},stacked:true},colors:['#10b981','#34d399','#fbbf24','#f59e0b','#ef4444'],plotOptions:{bar:{columnWidth:'50%'}},xaxis:{categories:['Clothing','Electronics','Home','Sports','Beauty']},legend:{position:'top'}}} />
-            <div className="sp-callout">Dead Stock Value: $12,400 (120d+ items)</div>
-          </div>
-
-          <div className="sp-card">
-            <h3>Reorder Suggestions</h3>
-            <table className="sp-table"><thead><tr><th>SKU</th><th>Product</th><th>Available</th><th>Velocity/Day</th><th>Lead Time</th><th>Safety Stock</th><th>Reorder Pt</th><th>Suggested Qty</th><th>Priority</th></tr></thead><tbody>
-              {[['SKU001','Headphones',12,8,7,20,76,100,'critical'],['SKU002','Cotton Tee',45,6,5,15,45,60,'warning'],['SKU003','Smart Watch',180,5,10,25,75,0,'ok'],['SKU004','Running Shoes',85,4,7,12,40,0,'ok']].map((r:any,i)=>(
-                <tr key={i}><td>{r[0]}</td><td>{r[1]}</td><td>{r[2]}</td><td>{r[3]}</td><td>{r[4]}d</td><td>{r[5]}</td><td>{r[6]}</td><td>{r[7]}</td><td><span className={`sp-badge sp-badge-${r[8]}`}>{r[8]}</span></td></tr>
-              ))}
-            </tbody></table>
-            <div className="sp-footer-actions"><button className="sp-btn sp-btn-primary">Export CSV</button><button className="sp-btn sp-btn-outline">Create Draft PO</button></div>
-          </div>
-        </>
-      )}
-
-      {tab === 'returns' && (
-        <>
-          <div className="sp-kpi-row">
-            {[{l:'RETURN RATE',v:'4.2%',c:'+0.5%',cl:'#ef4444'},{l:'TOTAL REFUNDS',v:'$8,420',c:'+12%',cl:'#ef4444'},{l:'UNITS RETURNED',v:'347',c:'+8%',cl:'#ef4444'},{l:'REFUND % REV',v:'5.9%',c:'+0.8%',cl:'#ef4444'},{l:'AVG TIME TO RETURN',v:'8.2d',c:'-1.2d',cl:'#10b981'},{l:'RETURN OUTLIERS',v:'12',c:'+3',cl:'#ef4444'}].map((k,i)=>(
-              <div key={i} className="sp-kpi-card"><span className="sp-kpi-label">{k.l}</span><div className="sp-kpi-value">{k.v}</div><span className="sp-kpi-change" style={{color:k.cl}}>{k.c}</span></div>
-            ))}
-          </div>
-
-          <div className="sp-grid sp-grid-2">
-            <div className="sp-card">
-              <h3>Refund/Return Rate Trend (Weekly)</h3>
-              <CC type="line" height={250} series={[{name:'Return Rate',type:'line',data:[3.8,4.0,3.5,4.2,3.9,4.5,4.1,4.2,3.8,4.6,4.3,4.2]},{name:'Returns',type:'bar',data:[28,32,25,35,30,38,33,35,28,40,35,34]}]} options={{chart:{toolbar:{show:false}},stroke:{width:[3,0],curve:'smooth'},colors:['#ef4444','#94a3b8'],xaxis:{categories:['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10','W11','W12']},yaxis:[{title:{text:'Rate %'},min:0,max:6},{opposite:true,title:{text:'Returns'}}],legend:{position:'top'}}} />
-            </div>
-            <div className="sp-card">
-              <h3>Return Reasons Breakdown</h3>
-              <CC type="donut" height={250} series={[35,25,18,12,10]} options={{labels:['Size Issue','Quality','Wrong Item','Changed Mind','Damaged'],colors:['#ef4444','#f59e0b','#1a73e8','#8b5cf6','#94a3b8'],chart:{toolbar:{show:false}},plotOptions:{pie:{donut:{size:'60%',labels:{show:true,total:{show:true,label:'Total',formatter:()=>'347'}}}}},legend:{position:'bottom'}}} />
-            </div>
-          </div>
-
-          <div className="sp-grid sp-grid-2">
-            <div className="sp-card">
-              <h3>Return Rate vs Revenue (Scatter)</h3>
-              <CC type="scatter" height={250} series={[{name:'Ideal Zone',data:[[8200,1.5],[12400,2.1],[15400,2.8],[9600,1.8]]},{name:'Danger Zone',data:[[5800,5.2],[7200,6.1],[4200,4.8],[3800,5.5]]}]} options={{chart:{toolbar:{show:false}},colors:['#10b981','#ef4444'],xaxis:{title:{text:'Revenue ($)'},labels:{formatter:(v:number)=>'$'+(v/1000)+'K'}},yaxis:{title:{text:'Return Rate (%)'}},markers:{size:10},legend:{position:'top'}}} />
-            </div>
-            <div className="sp-card">
-              <h3>Variant Return Heatmap (Size x Color)</h3>
-              <div className="sp-heatmap-grid">
-                <div className="sp-hm-header"><span></span>{['Black','White','Red','Blue'].map(c=><span key={c}>{c}</span>)}</div>
-                {['S','M','L','XL'].map((sz,i)=>(
-                  <div key={i} className="sp-hm-row"><span className="sp-hm-label">{sz}</span>
-                    {[2,4,8,5,3,2,6,4,1,3,5,3,4,6,10,7].slice(i*4,i*4+4).map((v,j)=>(
-                      <span key={j} className="sp-hm-cell" style={{background:v>6?'#ef4444':v>3?'#f59e0b':'#10b981',color:'#fff'}}>{v}%</span>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="sp-card">
-            <h3>Top Return SKUs - Action Table</h3>
-            <table className="sp-table"><thead><tr><th>SKU</th><th>Product</th><th>Returns</th><th>Rate %</th><th>Reason</th><th>Action</th></tr></thead><tbody>
-              {[['SKU003','Smart Watch',45,5.2,'Quality','investigate'],['SKU008','Shirt XL',38,8.1,'Size','update-sizing'],['SKU012','Shoes B',28,4.5,'Damaged','fix-packaging'],['SKU015','Widget Z',22,12.3,'Wrong Item','review-listing']].map((r:any,i)=>(
-                <tr key={i}><td>{r[0]}</td><td>{r[1]}</td><td>{r[2]}</td><td style={{color:'#ef4444'}}>{r[3]}%</td><td>{r[4]}</td><td><button className="sp-btn sp-btn-sm">{r[5]}</button></td></tr>
-              ))}
-            </tbody></table>
-          </div>
-        </>
-      )}
-
-      <div className="sp-footer-actions">
-        <button className="sp-btn sp-btn-primary">Export Report</button>
-        <button className="sp-btn sp-btn-outline">Schedule</button>
+      <div className="sp-card">
+        <h3><BarChart3 size={16} style={{ marginRight: 6 }} />BCG Product Matrix</h3>
+        <CC type="scatter" height={350} series={[
+          { name: 'Stars', data: bcg.stars.length > 0 ? bcg.stars : [[0, 0]] },
+          { name: 'Cash Cows', data: bcg.cashCows.length > 0 ? bcg.cashCows : [[0, 0]] },
+          { name: 'Question Marks', data: bcg.questionMarks.length > 0 ? bcg.questionMarks : [[0, 0]] },
+          { name: 'Dogs', data: bcg.dogs.length > 0 ? bcg.dogs : [[0, 0]] },
+        ]} options={{
+          chart: { toolbar: { show: false } },
+          colors: ['#10b981', '#1a73e8', '#f59e0b', '#ef4444'],
+          xaxis: { title: { text: 'Revenue ($K)' }, min: 0 },
+          yaxis: { title: { text: 'Growth Rate (%)' } },
+          markers: { size: 12 },
+          annotations: {
+            yaxis: [{ y: 10, borderColor: '#94a3b8', label: { text: 'Growth Threshold' } }],
+          },
+          legend: { position: 'top' },
+          tooltip: { z: { title: '' } },
+        }} />
       </div>
+
+      <div className="sp-card">
+        <h3><TrendingUp size={16} style={{ marginRight: 6 }} />Top 20 Products by Revenue</h3>
+        {top20.length > 0 ? (
+          <CC type="bar" height={Math.max(400, top20.length * 28)} series={[
+            { name: 'Revenue', data: top20.map((p: any) => Math.round(p.revenue)) },
+          ]} options={{
+            chart: { toolbar: { show: false } },
+            plotOptions: { bar: { horizontal: true, barHeight: '70%' } },
+            colors: ['#10b981'],
+            xaxis: { labels: { formatter: (v: number) => '$' + (v / 1000).toFixed(1) + 'K' } },
+            yaxis: { categories: top20.map((p: any) => p.title.length > 30 ? p.title.slice(0, 30) + '…' : p.title) },
+            tooltip: { y: { formatter: (v: number) => '$' + v.toLocaleString() } },
+          }} />
+        ) : (
+          <p style={{ padding: 20, color: '#94a3b8' }}>No sales data available yet.</p>
+        )}
+      </div>
+
+      <div className="sp-card">
+        <h3><ArrowUpRight size={16} style={{ marginRight: 6 }} />Revenue Growth Rate (Recent 15d vs Prior 15d)</h3>
+        {top20.length > 0 ? (
+          <CC type="bar" height={350} series={[
+            { name: 'Growth %', data: top20.map((p: any) => p.growthRate) },
+          ]} options={{
+            chart: { toolbar: { show: false } },
+            plotOptions: { bar: { horizontal: false, columnWidth: '60%', colors: { ranges: [{ from: -999, to: 0, color: '#ef4444' }, { from: 0, to: 999, color: '#10b981' }] } } },
+            xaxis: { categories: top20.map((p: any) => p.title.length > 15 ? p.title.slice(0, 15) + '…' : p.title), labels: { rotate: -45, style: { fontSize: '10px' } } },
+            yaxis: { labels: { formatter: (v: number) => v + '%' } },
+            tooltip: { y: { formatter: (v: number) => v + '%' } },
+          }} />
+        ) : (
+          <p style={{ padding: 20, color: '#94a3b8' }}>No growth data available yet.</p>
+        )}
+      </div>
+    </>
+  );
+}
+
+function MarginsTab({ vendors, products }: any) {
+  const topByType = useMemo(() => {
+    const typeMap: Record<string, { revenue: number; units: number; count: number }> = {};
+    for (const p of products) {
+      const t = p.productType || 'Uncategorized';
+      if (!typeMap[t]) typeMap[t] = { revenue: 0, units: 0, count: 0 };
+      typeMap[t].revenue += p.revenue;
+      typeMap[t].units += p.unitsSold;
+      typeMap[t].count += 1;
+    }
+    return Object.entries(typeMap).map(([name, d]) => ({ name, ...d })).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
+  }, [products]);
+
+  return (
+    <>
+      <div className="sp-card">
+        <h3><BarChart3 size={16} style={{ marginRight: 6 }} />Revenue by Vendor</h3>
+        {vendors.length > 0 ? (
+          <CC type="bar" height={300} series={[
+            { name: 'Revenue', data: vendors.map((v: any) => Math.round(v.revenue)) },
+            { name: 'Units', data: vendors.map((v: any) => v.units) },
+          ]} options={{
+            chart: { toolbar: { show: false } },
+            plotOptions: { bar: { columnWidth: '50%' } },
+            colors: ['#1a73e8', '#10b981'],
+            xaxis: { categories: vendors.map((v: any) => v.name) },
+            yaxis: [
+              { title: { text: 'Revenue ($)' }, labels: { formatter: (v: number) => '$' + (v / 1000).toFixed(1) + 'K' } },
+              { opposite: true, title: { text: 'Units' } },
+            ],
+            tooltip: { y: { formatter: (v: number, { seriesIndex }: any) => seriesIndex === 0 ? '$' + v.toLocaleString() : v + ' units' } },
+          }} />
+        ) : (
+          <p style={{ padding: 20, color: '#94a3b8' }}>No vendor data available.</p>
+        )}
+      </div>
+
+      <div className="sp-card">
+        <h3><Layers size={16} style={{ marginRight: 6 }} />Revenue by Product Type</h3>
+        {topByType.length > 0 ? (
+          <CC type="pie" height={350} series={topByType.map(t => Math.round(t.revenue))} options={{
+            labels: topByType.map(t => t.name),
+            colors: ['#1a73e8', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1'],
+            legend: { position: 'bottom' },
+            tooltip: { y: { formatter: (v: number) => '$' + v.toLocaleString() } },
+          }} />
+        ) : (
+          <p style={{ padding: 20, color: '#94a3b8' }}>No product type data available.</p>
+        )}
+      </div>
+
+      <div className="sp-card">
+        <h3>Vendor Performance Table</h3>
+        <div style={{ overflowX: 'auto' }}>
+          <table className="sp-table">
+            <thead><tr><th>Vendor</th><th>Products</th><th>Revenue</th><th>Units Sold</th><th>Avg Rev/Product</th></tr></thead>
+            <tbody>
+              {vendors.map((v: any, i: number) => (
+                <tr key={i}>
+                  <td><strong>{v.name}</strong></td>
+                  <td>{v.products}</td>
+                  <td>${v.revenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                  <td>{v.units.toLocaleString()}</td>
+                  <td>${v.products > 0 ? Math.round(v.revenue / v.products).toLocaleString() : 0}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function InventoryTab({ products, variantHeatmap, kpis }: any) {
+  const inventoryDistribution = useMemo(() => {
+    const ranges = [
+      { label: '0 (Out)', min: 0, max: 0 },
+      { label: '1-10 (Low)', min: 1, max: 10 },
+      { label: '11-50', min: 11, max: 50 },
+      { label: '51-100', min: 51, max: 100 },
+      { label: '100+', min: 101, max: Infinity },
+    ];
+    return ranges.map(r => ({
+      label: r.label,
+      count: products.filter((p: any) => p.totalInventory >= r.min && p.totalInventory <= r.max).length,
+    }));
+  }, [products]);
+
+  return (
+    <>
+      <div className="sp-card">
+        <h3><Package size={16} style={{ marginRight: 6 }} />Inventory Distribution</h3>
+        <CC type="bar" height={300} series={[{
+          name: 'Products',
+          data: inventoryDistribution.map((d: any) => d.count),
+        }]} options={{
+          chart: { toolbar: { show: false } },
+          plotOptions: { bar: { columnWidth: '50%', colors: { ranges: [{ from: 0, to: 0, color: '#ef4444' }] } } },
+          colors: ['#1a73e8'],
+          xaxis: { categories: inventoryDistribution.map((d: any) => d.label) },
+          yaxis: { title: { text: 'Number of Products' } },
+        }} />
+      </div>
+
+      <div className="sp-card">
+        <h3><AlertTriangle size={16} style={{ marginRight: 6 }} />Inventory Status Summary</h3>
+        <CC type="donut" height={300} series={[kpis.inStock, kpis.lowStock, kpis.outOfStock]} options={{
+          labels: ['In Stock (>10)', 'Low Stock (1-10)', 'Out of Stock (0)'],
+          colors: ['#10b981', '#f59e0b', '#ef4444'],
+          legend: { position: 'bottom' },
+        }} />
+      </div>
+
+      {variantHeatmap.length > 0 && (
+        <div className="sp-card">
+          <h3><Layers size={16} style={{ marginRight: 6 }} />Variant Inventory Heatmap (Top Products)</h3>
+          <div className="sp-heatmap-grid">
+            <div className="sp-hm-header">
+              <span>Product</span>
+              {variantHeatmap[0]?.variants?.slice(0, 8).map((_: any, i: number) => <span key={i}>V{i + 1}</span>)}
+            </div>
+            {variantHeatmap.map((row: any, i: number) => (
+              <div key={i} className="sp-hm-row">
+                <span className="sp-hm-label">{row.product}</span>
+                {row.variants.slice(0, 8).map((v: any, j: number) => (
+                  <span key={j} className="sp-hm-cell" style={{
+                    background: v.inventory === 0 ? '#fecaca' : v.inventory <= 5 ? '#fef3c7' : v.inventory <= 20 ? '#d1fae5' : '#a7f3d0',
+                    color: '#333', fontSize: '11px',
+                  }}>
+                    {v.inventory}
+                  </span>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="sp-card">
+        <h3>Low & Out of Stock Products</h3>
+        <div style={{ overflowX: 'auto' }}>
+          <table className="sp-table">
+            <thead><tr><th>Product</th><th>Vendor</th><th>Inventory</th><th>Status</th><th>Revenue</th></tr></thead>
+            <tbody>
+              {products.filter((p: any) => p.totalInventory <= 10).sort((a: any, b: any) => a.totalInventory - b.totalInventory).slice(0, 20).map((p: any, i: number) => (
+                <tr key={i}>
+                  <td>{p.title}</td>
+                  <td>{p.vendor}</td>
+                  <td><strong>{p.totalInventory}</strong></td>
+                  <td><span style={{ color: p.totalInventory === 0 ? '#ef4444' : '#f59e0b', fontWeight: 600 }}>{p.totalInventory === 0 ? 'Out of Stock' : 'Low Stock'}</span></td>
+                  <td>${p.revenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function ReturnsTab({ products }: any) {
+  const withRefunds = useMemo(() =>
+    products.filter((p: any) => p.refundAmount > 0).sort((a: any, b: any) => b.refundAmount - a.refundAmount),
+    [products]
+  );
+
+  const totalRefunds = withRefunds.reduce((s: number, p: any) => s + p.refundAmount, 0);
+  const avgRefundRate = products.length > 0
+    ? products.reduce((s: number, p: any) => s + p.refundRate, 0) / products.filter((p: any) => p.revenue > 0).length || 0
+    : 0;
+
+  return (
+    <>
+      <div className="sp-kpi-row">
+        {[
+          { l: 'TOTAL REFUNDS', v: `$${totalRefunds.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, cl: '#ef4444' },
+          { l: 'PRODUCTS WITH REFUNDS', v: withRefunds.length.toString(), cl: '#f59e0b' },
+          { l: 'AVG REFUND RATE', v: `${avgRefundRate.toFixed(1)}%`, cl: avgRefundRate > 5 ? '#ef4444' : '#10b981' },
+        ].map((k, i) => (
+          <div key={i} className="sp-kpi-card">
+            <span className="sp-kpi-label">{k.l}</span>
+            <div className="sp-kpi-value" style={{ color: k.cl }}>{k.v}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="sp-card">
+        <h3><RotateCcw size={16} style={{ marginRight: 6 }} />Refund Amount by Product</h3>
+        {withRefunds.length > 0 ? (
+          <CC type="bar" height={350} series={[
+            { name: 'Refund Amount', data: withRefunds.slice(0, 15).map((p: any) => Math.round(p.refundAmount * 100) / 100) },
+          ]} options={{
+            chart: { toolbar: { show: false } },
+            plotOptions: { bar: { horizontal: true, barHeight: '65%' } },
+            colors: ['#ef4444'],
+            xaxis: { labels: { formatter: (v: number) => '$' + v.toFixed(0) } },
+            yaxis: { categories: withRefunds.slice(0, 15).map((p: any) => p.title.length > 25 ? p.title.slice(0, 25) + '…' : p.title) },
+            tooltip: { y: { formatter: (v: number) => '$' + v.toFixed(2) } },
+          }} />
+        ) : (
+          <p style={{ padding: 20, color: '#94a3b8' }}>No refund data found — great news!</p>
+        )}
+      </div>
+
+      <div className="sp-card">
+        <h3><ArrowDownRight size={16} style={{ marginRight: 6 }} />Refund Rate by Product (%)</h3>
+        {withRefunds.length > 0 ? (
+          <CC type="bar" height={350} series={[
+            { name: 'Refund Rate', data: withRefunds.slice(0, 15).map((p: any) => p.refundRate) },
+          ]} options={{
+            chart: { toolbar: { show: false } },
+            colors: ['#f59e0b'],
+            plotOptions: { bar: { columnWidth: '50%' } },
+            xaxis: { categories: withRefunds.slice(0, 15).map((p: any) => p.title.length > 15 ? p.title.slice(0, 15) + '…' : p.title), labels: { rotate: -45, style: { fontSize: '10px' } } },
+            yaxis: { labels: { formatter: (v: number) => v + '%' } },
+            tooltip: { y: { formatter: (v: number) => v + '%' } },
+          }} />
+        ) : (
+          <p style={{ padding: 20, color: '#94a3b8' }}>No refund data found.</p>
+        )}
+      </div>
+
+      <div className="sp-card">
+        <h3>Refund Details Table</h3>
+        <div style={{ overflowX: 'auto' }}>
+          <table className="sp-table">
+            <thead><tr><th>Product</th><th>Revenue</th><th>Refund Amount</th><th>Refund Rate</th><th>Units Sold</th></tr></thead>
+            <tbody>
+              {withRefunds.slice(0, 20).map((p: any, i: number) => (
+                <tr key={i}>
+                  <td>{p.title}</td>
+                  <td>${p.revenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                  <td style={{ color: '#ef4444' }}>${p.refundAmount.toFixed(2)}</td>
+                  <td style={{ color: p.refundRate > 10 ? '#ef4444' : p.refundRate > 5 ? '#f59e0b' : '#10b981' }}>{p.refundRate}%</td>
+                  <td>{p.unitsSold}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+}
+
+export function ErrorBoundary() {
+  return (
+    <div style={{ padding: 40, fontFamily: "Inter, sans-serif" }}>
+      <h1 style={{ color: "#EF4444" }}>Something went wrong</h1>
+      <p>This page encountered an error. Please try refreshing or go back to the dashboard.</p>
+      <a href="/app" style={{ color: "#1a73e8" }}>← Back to Dashboard</a>
     </div>
   );
 }
