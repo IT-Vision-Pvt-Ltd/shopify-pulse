@@ -7,7 +7,7 @@
     "test": "vitest run",
     "build": "prisma generate && remix vite:build",
     "dev": "shopify app dev",
-    "start": "npx prisma migrate deploy && PORT=$PORT remix-serve ./build/server/index.js"
+    "start": "npx prisma db push --skip-generate && PORT=$PORT remix-serve ./build/server/index.js"
   },
   "repository": {
     "type": "git",
