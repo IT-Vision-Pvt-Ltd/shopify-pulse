@@ -13,7 +13,7 @@ function CC(p: any) {
 }
 
 const S: Record<string, React.CSSProperties> = {
-  page: { padding: 24, maxWidth: 1400, margin: '0 auto', fontFamily: '-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif' },
+  page: { padding: 24, maxWidth: 1400, margin: '0 auto', fontFamily: '-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif', background: '#f6f6f7', minHeight: '100vh' },
   grid2: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(500px,1fr))', gap: 20, marginBottom: 20 },
   grid3: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(320px,1fr))', gap: 20, marginBottom: 20 },
   kpiRow: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 16, marginBottom: 24 },
@@ -29,6 +29,13 @@ const S: Record<string, React.CSSProperties> = {
   aiCard: { background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', borderRadius: 14, padding: 24, color: '#fff', marginBottom: 20 },
   aiTitle: { fontSize: 16, fontWeight: 700, marginBottom: 10 },
   aiText: { fontSize: 13, lineHeight: 1.7, opacity: 0.95 },
+  aiBtn: { display: 'inline-block', marginTop: 14, padding: '10px 24px', background: 'rgba(255,255,255,0.2)', color: '#fff', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer', backdropFilter: 'blur(4px)' },
+  section: { fontSize: 13, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase' as const, letterSpacing: 1, margin: '28px 0 12px', borderBottom: '1px solid #e5e7eb', paddingBottom: 6 },
+  sankeyContainer: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0, padding: '10px 0', overflowX: 'auto' as const },
+  sankeyCol: { display: 'flex', flexDirection: 'column' as const, gap: 6, minWidth: 100 },
+  sankeyNode: { padding: '8px 12px', borderRadius: 8, fontSize: 11, fontWeight: 600, textAlign: 'center' as const, color: '#fff', position: 'relative' as const },
+  sankeyFlows: { display: 'flex', flexDirection: 'column' as const, gap: 2, minWidth: 60, alignItems: 'center' as const },
+  sankeyFlow: { height: 3, borderRadius: 2, opacity: 0.5 },
 };
 
 function retentionColor(pct: number) {
@@ -51,10 +58,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           id displayName email numberOfOrders
           amountSpent { amount currencyCode }
           createdAt updatedAt
+          tags
           orders(first: 50) { nodes {
             createdAt
             totalPriceSet { shopMoney { amount } }
             lineItems(first: 5) { nodes { title } }
+            channelInformation { channelDefinition { handle } }
           }}
         }
       }
@@ -68,6 +77,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   }
 
   const now = new Date();
+  const dayMs = 86400000;
   const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const totalCustomers = allCustomers.length;
   const newThisMonth = allCustomers.filter(c => c.createdAt?.startsWith(thisMonth)).length;
@@ -77,13 +87,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const avgLtv = totalCustomers > 0 ? Math.round(ltvValues.reduce((a, b) => a + b, 0) / totalCustomers) : 0;
 
   // Churn risk: no orders in 90+ days, had at least 1 order
-  const dayMs = 86400000;
   const churnRisk = allCustomers.filter(c => {
     const orders = c.orders?.nodes || [];
     if (orders.length === 0) return false;
     const lastOrder = new Date(orders[0].createdAt);
     return (now.getTime() - lastOrder.getTime()) > 90 * dayMs;
   }).length;
+  const churnRiskPct = totalCustomers > 0 ? Math.round((churnRisk / totalCustomers) * 100) : 0;
+
   // Repeat risk: only 1 order, placed 30-90 days ago
   const repeatRisk = allCustomers.filter(c => {
     const orders = c.orders?.nodes || [];
@@ -91,8 +102,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const d = now.getTime() - new Date(orders[0].createdAt).getTime();
     return d > 30 * dayMs && d < 90 * dayMs;
   }).length;
+  const repeatRiskPct = totalCustomers > 0 ? Math.round((repeatRisk / totalCustomers) * 100) : 0;
 
-  // Monthly cohort retention
+  // Monthly cohort retention (Mo 0-12)
   const cohortMap: Record<string, { total: number; activeMonths: Record<string, Set<string>> }> = {};
   allCustomers.forEach(c => {
     const created = c.createdAt?.substring(0, 7);
@@ -112,7 +124,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const co = cohortMap[ck];
     const startIdx = allMonths.indexOf(ck);
     const retention: number[] = [];
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i <= 12; i++) {
       const m = allMonths[startIdx + i];
       if (!m) { retention.push(0); continue; }
       const active = co.activeMonths[m]?.size || 0;
@@ -141,13 +153,41 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   });
 
   // LTV distribution buckets
-  const buckets = [0, 50, 100, 200, 500, 1000, 5000];
-  const ltvDist = buckets.map((b, i) => {
-    const next = buckets[i + 1] || Infinity;
-    const label = next === Infinity ? `$${b}+` : `$${b}-${next}`;
-    const count = ltvValues.filter(v => v >= b && v < next).length;
-    return { label, count };
+  const ltvBuckets = [
+    { min: 0, max: 10, label: '$0-10' },
+    { min: 10, max: 50, label: '$10-50' },
+    { min: 50, max: 100, label: '$50-100' },
+    { min: 100, max: 150, label: '$100-150' },
+    { min: 150, max: 250, label: '$150-250' },
+    { min: 250, max: 300, label: '$250-300' },
+    { min: 300, max: Infinity, label: '$300+' },
+  ];
+  const ltvDist = ltvBuckets.map(b => ({
+    label: b.label,
+    count: ltvValues.filter(v => v >= b.min && v < b.max).length,
+  }));
+
+  // LTV by Channel
+  const channelLtv: Record<string, { current: number; previous: number; count: number }> = {};
+  const sixtyDaysAgo = new Date(now.getTime() - 60 * dayMs);
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * dayMs);
+  allCustomers.forEach(c => {
+    (c.orders?.nodes || []).forEach((o: any) => {
+      const ch = o.channelInformation?.channelDefinition?.handle || 'online';
+      const channelName = ch.includes('google') ? 'Google' : ch.includes('meta') || ch.includes('facebook') ? 'Meta' : ch.includes('email') ? 'Email' : 'Organic';
+      if (!channelLtv[channelName]) channelLtv[channelName] = { current: 0, previous: 0, count: 0 };
+      const oDate = new Date(o.createdAt);
+      const amt = parseFloat(o.totalPriceSet?.shopMoney?.amount || '0');
+      if (oDate >= thirtyDaysAgo) channelLtv[channelName].current += amt;
+      else if (oDate >= sixtyDaysAgo) channelLtv[channelName].previous += amt;
+      channelLtv[channelName].count++;
+    });
   });
+  // Ensure all 4 channels exist
+  ['Google', 'Meta', 'Email', 'Organic'].forEach(ch => {
+    if (!channelLtv[ch]) channelLtv[ch] = { current: 0, previous: 0, count: 0 };
+  });
+  const ltvByChannel = Object.entries(channelLtv).map(([name, v]) => ({ name, current: Math.round(v.current), previous: Math.round(v.previous) }));
 
   // LTV by first product
   const productLtv: Record<string, { total: number; count: number }> = {};
@@ -162,7 +202,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   });
   const ltvByProduct = Object.entries(productLtv)
     .map(([name, v]) => ({ name, avg: Math.round(v.total / v.count) }))
-    .sort((a, b) => b.avg - a.avg).slice(0, 10);
+    .sort((a, b) => b.avg - a.avg).slice(0, 5);
+
+  // LTV:CAC ratio
+  const ltvCacRatio = Math.min(Math.round(avgLtv / Math.max(25, 1) * 10) / 10, 10);
 
   // RFM segmentation
   const rfmCustomers = allCustomers.map(c => {
@@ -171,27 +214,44 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const recencyDays = lastOrder ? Math.floor((now.getTime() - lastOrder.getTime()) / dayMs) : 999;
     const frequency = c.numberOfOrders || 0;
     const monetary = parseFloat(c.amountSpent?.amount || '0');
-    return { recencyDays, frequency, monetary };
+    return { id: c.id, recencyDays, frequency, monetary };
   });
-  const segments: Record<string, number> = { Champions: 0, Loyal: 0, 'Potential Loyalist': 0, 'New Customers': 0, 'At Risk': 0, 'Lost': 0 };
-  rfmCustomers.forEach(c => {
-    if (c.recencyDays < 30 && c.frequency >= 4) segments.Champions++;
-    else if (c.recencyDays < 60 && c.frequency >= 3) segments.Loyal++;
-    else if (c.recencyDays < 30 && c.frequency >= 1) segments['Potential Loyalist']++;
-    else if (c.recencyDays < 30) segments['New Customers']++;
-    else if (c.recencyDays < 120 && c.frequency >= 2) segments['At Risk']++;
-    else segments.Lost++;
-  });
+
+  const getSegment = (c: { recencyDays: number; frequency: number; monetary: number }) => {
+    if (c.recencyDays < 30 && c.frequency >= 4) return 'Champions';
+    if (c.recencyDays < 60 && c.frequency >= 3) return 'Loyal';
+    if (c.recencyDays < 30 && c.frequency >= 1) return 'Promising';
+    if (c.recencyDays < 120 && c.frequency >= 2) return 'At-Risk';
+    return 'Lost';
+  };
+
+  const segments: Record<string, number> = { Champions: 0, Loyal: 0, Promising: 0, 'At-Risk': 0, Lost: 0 };
+  rfmCustomers.forEach(c => { segments[getSegment(c)]++; });
   const rfmTreemap = Object.entries(segments).map(([x, y]) => ({ x, y }));
+
+  // RFM Migration Sankey - simulate previous vs current segment
+  const sankeyFlows: Record<string, Record<string, number>> = {};
+  const segNames = ['Champions', 'Loyal', 'Promising', 'At-Risk', 'Lost'];
+  segNames.forEach(s => { sankeyFlows[s] = {}; segNames.forEach(t => { sankeyFlows[s][t] = 0; }); });
+  rfmCustomers.forEach(c => {
+    const current = getSegment(c);
+    // Simulate previous segment by shifting recency back 30 days
+    const prev = getSegment({ ...c, recencyDays: c.recencyDays + 30 });
+    sankeyFlows[prev][current] = (sankeyFlows[prev][current] || 0) + 1;
+  });
+  const sankeyData = Object.entries(sankeyFlows).flatMap(([from, targets]) =>
+    Object.entries(targets).filter(([, v]) => v > 0).map(([to, value]) => ({ from, to, value }))
+  );
 
   // Customer lifecycle funnel
   const funnel = [
-    { label: 'All Customers', count: totalCustomers },
-    { label: 'Made Purchase', count: allCustomers.filter(c => (c.numberOfOrders || 0) >= 1).length },
-    { label: '2+ Orders', count: allCustomers.filter(c => (c.numberOfOrders || 0) >= 2).length },
-    { label: '3+ Orders', count: allCustomers.filter(c => (c.numberOfOrders || 0) >= 3).length },
-    { label: '5+ Orders', count: allCustomers.filter(c => (c.numberOfOrders || 0) >= 5).length },
+    { label: 'Prospect', count: totalCustomers, pct: 100 },
+    { label: 'First Purchase', count: allCustomers.filter(c => (c.numberOfOrders || 0) >= 1).length, pct: 0 },
+    { label: 'Repeat', count: allCustomers.filter(c => (c.numberOfOrders || 0) >= 2).length, pct: 0 },
+    { label: 'Loyal', count: allCustomers.filter(c => (c.numberOfOrders || 0) >= 4).length, pct: 0 },
+    { label: 'Champion', count: allCustomers.filter(c => (c.numberOfOrders || 0) >= 6).length, pct: 0 },
   ];
+  funnel.forEach((f, i) => { f.pct = totalCustomers > 0 ? Math.round((f.count / totalCustomers) * 100) : 0; });
 
   // Repeat purchase rate by month
   const monthlyRepeat: Record<string, { total: Set<string>; repeat: Set<string> }> = {};
@@ -223,8 +283,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     return { label: next === Infinity ? `${b}d+` : `${b}-${next}d`, count: gaps.filter(g => g >= b && g < next).length };
   });
 
-  // Churn prediction scatter (recency vs frequency)
-  const churnScatter = rfmCustomers.filter(c => c.frequency > 0).map(c => ({ x: c.recencyDays, y: c.frequency }));
+  // Churn prediction scatter (days since last order vs churn probability)
+  const churnScatter = rfmCustomers.filter(c => c.frequency > 0).map(c => {
+    // Simple churn probability model: higher recency = higher churn, lower frequency = higher churn
+    const recencyScore = Math.min(c.recencyDays / 365, 1);
+    const freqScore = 1 - Math.min(c.frequency / 10, 1);
+    const churnProb = Math.round((recencyScore * 0.6 + freqScore * 0.4) * 100);
+    return { x: c.recencyDays, y: churnProb };
+  });
 
   // Revenue pareto
   const sortedLtv = [...ltvValues].sort((a, b) => b - a);
@@ -234,16 +300,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     cumRev += v;
     return { pct: Math.round(((i + 1) / sortedLtv.length) * 100), cumPct: totalRev > 0 ? Math.round((cumRev / totalRev) * 100) : 0, rev: Math.round(v) };
   });
-  // Sample every N points for chart
   const step = Math.max(1, Math.floor(paretoData.length / 50));
   const paretoSampled = paretoData.filter((_, i) => i % step === 0 || i === paretoData.length - 1);
 
-  // Next purchase prediction scatter (days since last order vs avg gap)
+  // Next purchase prediction scatter
   const nextPurchase = allCustomers.filter(c => (c.orders?.nodes || []).length >= 2).map(c => {
     const dates = (c.orders?.nodes || []).map((o: any) => new Date(o.createdAt).getTime()).sort((a: number, b: number) => a - b);
     const avgGap = dates.length > 1 ? (dates[dates.length - 1] - dates[0]) / (dates.length - 1) / dayMs : 0;
     const daysSince = Math.floor((now.getTime() - dates[dates.length - 1]) / dayMs);
-    return { x: daysSince, y: Math.round(avgGap) };
+    const predictedDays = Math.max(0, Math.round(avgGap - daysSince));
+    return { x: daysSince, y: predictedDays };
   });
 
   // AI RFM insight
@@ -251,17 +317,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const aiInsight = `Your largest segment is "${topSegment[0]}" with ${topSegment[1]} customers (${totalCustomers > 0 ? Math.round((topSegment[1] / totalCustomers) * 100) : 0}%). ` +
     `Repeat rate is ${repeatRate}% with average LTV of $${avgLtv}. ` +
     `${churnRisk} customers are at churn risk (no orders 90+ days). ` +
-    `${segments.Champions} champions drive most revenue — focus retention campaigns on the ${segments['At Risk']} at-risk customers to recover revenue. ` +
+    `${segments.Champions} champions drive most revenue — focus retention campaigns on the ${segments['At-Risk']} at-risk customers to recover revenue. ` +
     `Consider win-back emails for the ${segments.Lost} lost customers with personalized offers based on their purchase history.`;
 
-  // LTV:CAC ratio (estimated — no real CAC, use placeholder)
-  const ltvCacRatio = Math.min(Math.round(avgLtv / Math.max(25, 1) * 10) / 10, 10);
-
   return json({
-    totalCustomers, newThisMonth, repeatRate, avgLtv, churnRisk, repeatRisk,
+    totalCustomers, newThisMonth, repeatRate, avgLtv, churnRiskPct, repeatRiskPct,
     cohortRetention, cohortRevenue,
-    ltvDist, ltvByProduct, ltvCacRatio,
-    rfmTreemap, segments, funnel,
+    ltvDist, ltvByChannel, ltvByProduct, ltvCacRatio,
+    rfmTreemap, segments, sankeyData, funnel,
     repeatByMonth, gapHist, churnScatter,
     paretoSampled, nextPurchase, aiInsight,
   });
@@ -269,6 +332,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export default function CustomersPage() {
   const d = useLoaderData<typeof loader>();
+
+  const segColors: Record<string, string> = { Champions: '#10b981', Loyal: '#6366f1', Promising: '#3b82f6', 'At-Risk': '#f97316', Lost: '#ef4444' };
 
   return (
     <div style={S.page}>
@@ -281,8 +346,8 @@ export default function CustomersPage() {
           { label: 'New This Month', val: d.newThisMonth.toLocaleString(), color: '#10b981' },
           { label: 'Repeat Rate', val: d.repeatRate + '%', color: '#f59e0b' },
           { label: 'Avg LTV', val: '$' + d.avgLtv.toLocaleString(), color: '#8b5cf6' },
-          { label: 'Repeat Risk', val: d.repeatRisk.toLocaleString(), color: '#f97316' },
-          { label: 'Churn Risk', val: d.churnRisk.toLocaleString(), color: '#ef4444' },
+          { label: 'Repeat Risk', val: d.repeatRiskPct + '%', color: '#f97316' },
+          { label: 'Churn Risk', val: d.churnRiskPct + '%', color: '#ef4444' },
         ].map((k, i) => (
           <div key={i} style={S.kpi}>
             <div style={{ ...S.kpiVal, color: k.color }}>{k.val}</div>
@@ -291,13 +356,16 @@ export default function CustomersPage() {
         ))}
       </div>
 
-      {/* AI RFM Insight */}
+      {/* 9. AI RFM Insight */}
       <div style={S.aiCard}>
         <div style={S.aiTitle}>🤖 AI Customer Insight</div>
         <div style={S.aiText}>{d.aiInsight}</div>
+        <button style={S.aiBtn} onClick={() => alert('Action panel coming soon — set up automated win-back campaigns, segment-targeted emails, and churn prevention flows.')}>
+          🚀 Take Action
+        </button>
       </div>
 
-      {/* Cohort Retention Grid */}
+      {/* 1. Monthly Cohort Retention Grid (Mo 0-12) */}
       <div style={{ ...S.card, marginBottom: 20, overflowX: 'auto' }}>
         <div style={S.title}>📊 Monthly Cohort Retention Grid</div>
         <table style={S.cohortTable}>
@@ -305,7 +373,7 @@ export default function CustomersPage() {
             <tr>
               <th style={S.cohortTh}>Cohort</th>
               <th style={S.cohortTh}>Size</th>
-              {[0, 1, 2, 3, 4, 5].map(i => <th key={i} style={S.cohortTh}>M{i}</th>)}
+              {Array.from({ length: 13 }, (_, i) => <th key={i} style={S.cohortTh}>Mo {i}</th>)}
             </tr>
           </thead>
           <tbody>
@@ -315,7 +383,7 @@ export default function CustomersPage() {
                 <td style={S.cohortTd}>{c.total}</td>
                 {c.retention.map((r: number, j: number) => (
                   <td key={j} style={{ ...S.cohortTd, background: retentionColor(r), color: r >= 20 ? '#fff' : '#374151', fontWeight: 600 }}>
-                    {r}%
+                    {r > 0 ? r + '%' : '—'}
                   </td>
                 ))}
               </tr>
@@ -325,7 +393,7 @@ export default function CustomersPage() {
       </div>
 
       <div style={S.grid2}>
-        {/* Cohort Revenue Retention */}
+        {/* 2. Cohort Revenue Retention */}
         <div style={S.card}>
           <div style={S.title}>💰 Cohort Revenue Retention</div>
           <CC type="line" height={280} series={d.cohortRevenue} options={{
@@ -337,7 +405,7 @@ export default function CustomersPage() {
           }} />
         </div>
 
-        {/* LTV Distribution */}
+        {/* 3. LTV Distribution */}
         <div style={S.card}>
           <div style={S.title}>📈 LTV Distribution</div>
           <CC type="bar" height={280} series={[{ name: 'Customers', data: d.ltvDist.map((b: any) => b.count) }]} options={{
@@ -345,23 +413,40 @@ export default function CustomersPage() {
             xaxis: { categories: d.ltvDist.map((b: any) => b.label) },
             colors: ['#6366f1'],
             plotOptions: { bar: { borderRadius: 4, columnWidth: '60%' } },
+            dataLabels: { enabled: false },
           }} />
         </div>
 
-        {/* LTV by First Product */}
+        {/* 4. LTV by Channel */}
+        <div style={S.card}>
+          <div style={S.title}>📡 LTV by Channel</div>
+          <CC type="bar" height={280} series={[
+            { name: 'Current Period', data: d.ltvByChannel.map((c: any) => c.current) },
+            { name: 'Previous Period', data: d.ltvByChannel.map((c: any) => c.previous) },
+          ]} options={{
+            chart: { toolbar: { show: false } },
+            xaxis: { categories: d.ltvByChannel.map((c: any) => c.name) },
+            colors: ['#6366f1', '#c7d2fe'],
+            plotOptions: { bar: { borderRadius: 4, columnWidth: '55%' } },
+            dataLabels: { enabled: false },
+            yaxis: { labels: { formatter: (v: number) => '$' + v } },
+          }} />
+        </div>
+
+        {/* 5. LTV by First Product */}
         <div style={S.card}>
           <div style={S.title}>🛍️ LTV by First Product</div>
-          <CC type="bar" height={300} series={[{ name: 'Avg LTV', data: d.ltvByProduct.map((p: any) => p.avg) }]} options={{
+          <CC type="bar" height={280} series={[{ name: 'Avg LTV', data: d.ltvByProduct.map((p: any) => p.avg) }]} options={{
             chart: { toolbar: { show: false } },
             plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '65%' } },
             xaxis: { labels: { formatter: (v: number) => '$' + v } },
-            yaxis: { labels: { style: { fontSize: '11px' } } },
-            categories: d.ltvByProduct.map((p: any) => p.name),
+            yaxis: { categories: d.ltvByProduct.map((p: any) => p.name) },
             colors: ['#8b5cf6'],
+            dataLabels: { enabled: false },
           }} />
         </div>
 
-        {/* LTV:CAC Ratio */}
+        {/* 6. LTV:CAC Ratio */}
         <div style={S.card}>
           <div style={S.title}>⚖️ LTV:CAC Ratio</div>
           <CC type="radialBar" height={280} series={[Math.min(d.ltvCacRatio * 10, 100)]} options={{
@@ -371,39 +456,79 @@ export default function CustomersPage() {
           }} />
         </div>
 
-        {/* RFM Treemap */}
+        {/* 7. RFM Segmentation Treemap */}
         <div style={S.card}>
-          <div style={S.title}>🗺️ RFM Segmentation</div>
+          <div style={S.title}>🗺️ RFM Segmentation Treemap</div>
           <CC type="treemap" height={280} series={[{ data: d.rfmTreemap }]} options={{
             chart: { toolbar: { show: false } },
-            colors: ['#6366f1', '#10b981', '#3b82f6', '#06b6d4', '#f97316', '#ef4444'],
+            colors: ['#10b981', '#6366f1', '#3b82f6', '#f97316', '#ef4444'],
             plotOptions: { treemap: { distributed: true } },
           }} />
         </div>
+      </div>
 
-        {/* RFM Migration (grouped bar) */}
-        <div style={S.card}>
-          <div style={S.title}>🔄 RFM Segment Distribution</div>
-          <CC type="bar" height={280} series={[{ name: 'Customers', data: Object.values(d.segments) }]} options={{
-            chart: { toolbar: { show: false } },
-            xaxis: { categories: Object.keys(d.segments) },
-            colors: ['#6366f1'],
-            plotOptions: { bar: { borderRadius: 4, columnWidth: '55%', distributed: true } },
-          }} />
+      {/* 8. RFM Migration Sankey */}
+      <div style={{ ...S.card, marginBottom: 20 }}>
+        <div style={S.title}>🔄 RFM Migration Flow (Previous → Current)</div>
+        <div style={S.sankeyContainer}>
+          {/* Previous segments column */}
+          <div style={S.sankeyCol}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', marginBottom: 4, textAlign: 'center' }}>PREVIOUS</div>
+            {Object.keys(d.segments).map((seg: string) => {
+              const total = (d.sankeyData as any[]).filter((f: any) => f.from === seg).reduce((s: number, f: any) => s + f.value, 0);
+              return (
+                <div key={seg} style={{ ...S.sankeyNode, background: segColors[seg] || '#6b7280', minHeight: Math.max(28, total * 0.3) }}>
+                  {seg} ({total})
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Flow lines */}
+          <div style={{ minWidth: 80, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+            {(d.sankeyData as any[]).filter((f: any) => f.value > 0).slice(0, 15).map((f: any, i: number) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 2, fontSize: 9, color: '#9ca3af' }}>
+                <div style={{ width: Math.max(20, Math.min(60, f.value * 0.8)), height: Math.max(2, Math.min(8, f.value * 0.15)), background: segColors[f.from] || '#6b7280', borderRadius: 2, opacity: 0.6 }} />
+                <span>{f.value}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Current segments column */}
+          <div style={S.sankeyCol}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', marginBottom: 4, textAlign: 'center' }}>CURRENT</div>
+            {Object.keys(d.segments).map((seg: string) => {
+              const total = (d.sankeyData as any[]).filter((f: any) => f.to === seg).reduce((s: number, f: any) => s + f.value, 0);
+              return (
+                <div key={seg} style={{ ...S.sankeyNode, background: segColors[seg] || '#6b7280', minHeight: Math.max(28, total * 0.3) }}>
+                  {seg} ({total})
+                </div>
+              );
+            })}
+          </div>
         </div>
+      </div>
 
-        {/* Customer Lifecycle Funnel */}
+      <div style={S.section}>LIFECYCLE & RETENTION</div>
+
+      <div style={S.grid2}>
+        {/* 10. Customer Lifecycle Funnel */}
         <div style={S.card}>
           <div style={S.title}>🔽 Customer Lifecycle Funnel</div>
-          <CC type="bar" height={260} series={[{ name: 'Customers', data: d.funnel.map((f: any) => f.count) }]} options={{
-            chart: { toolbar: { show: false } },
-            plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '60%' } },
-            xaxis: { categories: d.funnel.map((f: any) => f.label) },
-            colors: ['#6366f1'],
-          }} />
+          {d.funnel.map((f: any, i: number) => {
+            const width = Math.max(30, f.pct);
+            const colors = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe'];
+            return (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+                <div style={{ width: `${width}%`, background: colors[i], borderRadius: 6, padding: '8px 14px', color: '#fff', fontSize: 13, fontWeight: 600, textAlign: 'center', transition: 'width 0.3s' }}>
+                  {f.label} — {f.count} ({f.pct}%)
+                </div>
+              </div>
+            );
+          })}
         </div>
 
-        {/* Repeat Purchase Rate */}
+        {/* 11. Repeat Purchase Rate */}
         <div style={S.card}>
           <div style={S.title}>🔁 Repeat Purchase Rate by Month</div>
           <CC type="bar" height={260} series={[{ name: 'Repeat %', data: d.repeatByMonth.map((m: any) => m.rate) }]} options={{
@@ -412,10 +537,11 @@ export default function CustomersPage() {
             colors: ['#10b981'],
             plotOptions: { bar: { borderRadius: 4, columnWidth: '55%' } },
             yaxis: { max: 100, labels: { formatter: (v: number) => v + '%' } },
+            dataLabels: { enabled: false },
           }} />
         </div>
 
-        {/* Time Between Purchases */}
+        {/* 12. Time Between Purchases */}
         <div style={S.card}>
           <div style={S.title}>⏱️ Time Between Purchases</div>
           <CC type="bar" height={260} series={[{ name: 'Customers', data: d.gapHist.map((g: any) => g.count) }]} options={{
@@ -423,47 +549,58 @@ export default function CustomersPage() {
             xaxis: { categories: d.gapHist.map((g: any) => g.label) },
             colors: ['#f59e0b'],
             plotOptions: { bar: { borderRadius: 4, columnWidth: '60%' } },
+            dataLabels: { enabled: false },
           }} />
         </div>
 
-        {/* Churn Prediction Scatter */}
+        {/* 13. Churn Prediction Scatter */}
         <div style={S.card}>
-          <div style={S.title}>⚠️ Churn Prediction (Recency vs Frequency)</div>
+          <div style={S.title}>⚠️ Churn Prediction (Days Since Order vs Probability)</div>
           <CC type="scatter" height={280} series={[{ name: 'Customers', data: d.churnScatter.slice(0, 200) }]} options={{
             chart: { toolbar: { show: false } },
             xaxis: { title: { text: 'Days Since Last Order' } },
-            yaxis: { title: { text: 'Order Count' } },
+            yaxis: { title: { text: 'Churn Probability %' }, max: 100 },
             colors: ['#ef4444'],
             markers: { size: 4, opacity: 0.6 },
           }} />
         </div>
 
-        {/* Revenue Pareto */}
+        {/* 14. Revenue Pareto 80/20 */}
         <div style={S.card}>
           <div style={S.title}>📊 Revenue Pareto (80/20)</div>
           <CC type="line" height={280} series={[
+            { name: 'Individual Revenue', data: d.paretoSampled.map((p: any) => p.rev), type: 'column' },
             { name: 'Cumulative %', data: d.paretoSampled.map((p: any) => p.cumPct), type: 'line' },
           ]} options={{
             chart: { toolbar: { show: false } },
             xaxis: { categories: d.paretoSampled.map((p: any) => p.pct + '%'), title: { text: '% of Customers' } },
-            yaxis: { max: 100, labels: { formatter: (v: number) => v + '%' } },
-            colors: ['#6366f1'],
-            stroke: { width: 3, curve: 'smooth' },
-            annotations: { yaxis: [{ y: 80, borderColor: '#ef4444', strokeDashArray: 4, label: { text: '80% Revenue', style: { color: '#ef4444' } } }] },
+            yaxis: [
+              { title: { text: 'Revenue ($)' }, labels: { formatter: (v: number) => '$' + v } },
+              { opposite: true, max: 100, title: { text: 'Cumulative %' }, labels: { formatter: (v: number) => v + '%' } },
+            ],
+            colors: ['#c7d2fe', '#6366f1'],
+            stroke: { width: [0, 3], curve: 'smooth' },
+            annotations: { yaxis: [{ y: 80, yAxisIndex: 1, borderColor: '#ef4444', strokeDashArray: 4, label: { text: '80% Revenue', style: { color: '#ef4444' } } }] },
+            dataLabels: { enabled: false },
           }} />
         </div>
 
-        {/* Next Purchase Timeline */}
+        {/* 15. Next Purchase Timeline */}
         <div style={S.card}>
           <div style={S.title}>🔮 Next Purchase Prediction</div>
           <CC type="scatter" height={280} series={[{ name: 'Customers', data: d.nextPurchase.slice(0, 200) }]} options={{
             chart: { toolbar: { show: false } },
             xaxis: { title: { text: 'Days Since Last Order' } },
-            yaxis: { title: { text: 'Avg Days Between Orders' } },
+            yaxis: { title: { text: 'Predicted Days to Next Order' } },
             colors: ['#8b5cf6'],
             markers: { size: 4, opacity: 0.6 },
           }} />
         </div>
+      </div>
+
+      {/* Footer */}
+      <div style={{ textAlign: 'center', padding: '20px 0', fontSize: 13, color: '#9ca3af' }}>
+        Customer Intelligence — powered by ShopifyPulse
       </div>
     </div>
   );
@@ -476,6 +613,7 @@ export function ErrorBoundary() {
       <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: 20 }}>
         <h2 style={{ color: '#dc2626', margin: '0 0 8px' }}>Customer Intelligence Error</h2>
         <p style={{ color: '#7f1d1d', margin: 0 }}>{(error as any)?.message || 'Failed to load customer data. Please try again.'}</p>
+        <a href="/app" style={{ color: '#6366f1', marginTop: 12, display: 'inline-block' }}>← Back to Dashboard</a>
       </div>
     </div>
   );
