@@ -244,3 +244,17 @@ model Integration {
 
   @@unique([shop, provider])
 }
+
+// AI Model Configuration
+model AIConfig {
+  id          String   @id @default(cuid())
+  shop        String
+  provider    String   @default("openai")
+  model       String   @default("gpt-4o")
+  apiKey      String
+  isActive    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([shop, provider])
+}

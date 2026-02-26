@@ -2,7 +2,7 @@ import { useState, useEffect, Suspense, lazy } from 'react';
 import { json } from '@remix-run/node';
 import type { LoaderFunctionArgs, ActionFunctionArgs } from '@remix-run/node';
 import { useLoaderData, useFetcher } from '@remix-run/react';
-import { authenticate } from '../shopify.server';
+import { authenticate, prisma } from '../shopify.server';
 
 const Chart = typeof window !== 'undefined' ? lazy(() => import('react-apexcharts')) : (() => null) as any;
 function CC(p: any) { const [c, sc] = useState(false); useEffect(() => sc(true), []); if (!c) return <div style={{ height: p.height || 250 }} />; return <Suspense fallback={<div style={{ height: p.height || 250 }} />}><Chart {...p} /></Suspense>; }
@@ -417,3 +417,5 @@ export function ErrorBoundary() {
     </div>
   );
 }
+
+

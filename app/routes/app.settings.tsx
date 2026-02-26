@@ -1,7 +1,7 @@
 import { json } from '@remix-run/node';
 import { useLoaderData } from '@remix-run/react';
 import { Page, Layout, Card, Text, BlockStack, InlineStack, Box, Badge, TextField, Button, Divider, Select, Checkbox, Banner } from '@shopify/polaris';
-import { authenticate } from '../shopify.server';
+import { authenticate, prisma } from '../shopify.server';
 import type { LoaderFunctionArgs } from '@remix-run/node';
 import { useState } from 'react';
 
@@ -192,3 +192,4 @@ export function ErrorBoundary() {
     </div>
   );
 }
+
