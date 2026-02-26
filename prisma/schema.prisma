@@ -226,3 +226,21 @@ model AnalyticsCache {
   
   @@unique([shopId, type, period])
 }
+
+// External Integrations (Google Analytics, Search Console, Meta)
+model Integration {
+  id            String   @id @default(cuid())
+  shop          String
+  provider      String   // 'google' | 'meta'
+  accessToken   String
+  refreshToken  String?
+  tokenExpiry   DateTime?
+  scopes        String?
+  accountId     String?  // GA4 property ID, GSC site URL, or Meta ad account ID
+  accountName   String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([shop, provider])
+}

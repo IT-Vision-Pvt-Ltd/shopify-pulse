@@ -3,6 +3,24 @@ import { json } from '@remix-run/node';
 import type { LoaderFunctionArgs } from '@remix-run/node';
 import { useLoaderData } from '@remix-run/react';
 import { authenticate } from '../shopify.server';
+import {
+  MetaAdSpendVsRevenue,
+  MetaCampaignPerformance,
+  MetaAudienceDemographics,
+  MetaCreativePerformance,
+  MetaFrequencyReach,
+  MetaCostTrend,
+  MetaAdFunnel,
+} from '../components/meta-charts';
+import type {
+  MetaAdSpendVsRevenueData,
+  MetaCampaignData,
+  MetaAudienceDemographicsData,
+  MetaCreativeData,
+  MetaFrequencyReachData,
+  MetaCostTrendData,
+  MetaAdFunnelData,
+} from '../components/meta-charts';
 
 const Chart = typeof window !== 'undefined' ? lazy(() => import('react-apexcharts')) : (() => null) as any;
 
@@ -85,8 +103,67 @@ function parseLandingPage(order: any): string {
   return '/';
 }
 
+// ======== Mock Data Functions ========
+function getMockMetaData() {
+  const months = ['Sep 2025', 'Oct 2025', 'Nov 2025', 'Dec 2025', 'Jan 2026', 'Feb 2026'];
+  return {
+    adSpendVsRevenue: {
+      months,
+      adSpend: [4200, 5100, 6800, 8200, 5900, 6400],
+      revenue: [12600, 17850, 23800, 28700, 18860, 22400],
+    } as MetaAdSpendVsRevenueData,
+    campaigns: [
+      { name: 'Summer Sale - Lookalike', status: 'Active' as const, spend: 2400, revenue: 9600, roas: 4.0, cpc: 0.82, cpm: 12.40, conversions: 128 },
+      { name: 'Retargeting - Cart Abandon', status: 'Active' as const, spend: 1800, revenue: 8100, roas: 4.5, cpc: 0.65, cpm: 9.80, conversions: 96 },
+      { name: 'Brand Awareness - Cold', status: 'Active' as const, spend: 3200, revenue: 6400, roas: 2.0, cpc: 1.20, cpm: 18.50, conversions: 64 },
+      { name: 'Product Launch - Interest', status: 'Paused' as const, spend: 1500, revenue: 3750, roas: 2.5, cpc: 0.95, cpm: 14.20, conversions: 42 },
+      { name: 'Holiday Promo - Broad', status: 'Completed' as const, spend: 4100, revenue: 2870, roas: 0.7, cpc: 1.80, cpm: 22.00, conversions: 28 },
+      { name: 'Instagram Stories - UGC', status: 'Active' as const, spend: 900, revenue: 4050, roas: 4.5, cpc: 0.55, cpm: 8.20, conversions: 54 },
+    ] as MetaCampaignData[],
+    audience: {
+      ageGroups: ['18-24', '25-34', '35-44', '45-54', '55-64', '65+'],
+      ageRevenue: [3200, 12800, 9600, 5400, 2100, 800],
+      ageSpend: [1800, 5200, 4100, 2800, 1200, 500],
+      genderLabels: ['Male', 'Female', 'Other'],
+      genderRevenue: [14200, 18400, 1300],
+    } as MetaAudienceDemographicsData,
+    creatives: [
+      { headline: 'Shop the Summer Collection — 40% Off', ctr: 3.2, cpc: 0.65, conversions: 86, roas: 5.2, spend: 1400 },
+      { headline: 'Free Shipping on Orders $50+', ctr: 2.8, cpc: 0.78, conversions: 72, roas: 4.1, spend: 1200 },
+      { headline: 'New Arrivals Just Dropped 🔥', ctr: 2.5, cpc: 0.92, conversions: 58, roas: 3.4, spend: 1100 },
+      { headline: 'Last Chance — Sale Ends Tonight', ctr: 4.1, cpc: 0.55, conversions: 94, roas: 3.8, spend: 1600 },
+      { headline: 'Customer Favorites — Best Sellers', ctr: 2.1, cpc: 1.10, conversions: 34, roas: 2.2, spend: 900 },
+    ] as MetaCreativeData[],
+    frequencyReach: {
+      dates: ['Week 1', 'Week 2', 'Week 3', 'Week 4', 'Week 5', 'Week 6', 'Week 7', 'Week 8'],
+      frequency: [1.2, 1.5, 1.8, 2.1, 2.6, 3.1, 3.5, 3.8],
+      reach: [85000, 92000, 88000, 95000, 82000, 78000, 71000, 65000],
+    } as MetaFrequencyReachData,
+    costTrend: {
+      dates: Array.from({ length: 30 }, (_, i) => `Day ${i + 1}`),
+      cpa: [18, 17, 19, 16, 15, 18, 20, 22, 19, 17, 16, 15, 14, 16, 18, 17, 15, 14, 13, 15, 16, 14, 13, 12, 14, 13, 12, 11, 13, 12],
+      cpm: [11, 12, 11, 13, 12, 14, 13, 15, 14, 12, 11, 13, 12, 14, 13, 12, 11, 12, 13, 11, 10, 12, 11, 10, 11, 10, 9, 10, 11, 10],
+      cpc: [0.85, 0.90, 0.82, 0.88, 0.95, 0.92, 0.98, 1.05, 0.95, 0.88, 0.82, 0.78, 0.80, 0.85, 0.82, 0.78, 0.75, 0.72, 0.78, 0.75, 0.70, 0.72, 0.68, 0.65, 0.70, 0.68, 0.65, 0.62, 0.68, 0.65],
+    } as MetaCostTrendData,
+    adFunnel: {
+      impressions: 1250000,
+      linkClicks: 37500,
+      addToCart: 5625,
+      purchases: 1125,
+    } as MetaAdFunnelData,
+  };
+}
+
+function getMockGA4Data() {
+  return { connected: true }; // Placeholder — GA4 charts component not yet available
+}
+
+function getMockGSCData() {
+  return { connected: true }; // Placeholder — GSC charts component not yet available
+}
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const range = dateRange(30);
   const query = `created_at:>='${range.from}' created_at:<='${range.to}'`;
   const orders = await fetchAllOrders(admin, query);
@@ -99,7 +176,32 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const query6m = `created_at:>='${range6m.from}' created_at:<='${range6m.to}'`;
   const orders6m = await fetchAllOrders(admin, query6m);
 
-  return json({ orders, prevOrders, orders6m, range });
+  // Check integration status
+  let googleConnected = false;
+  let metaConnected = false;
+  let ga4Data = null;
+  let gscData = null;
+  let metaData = null;
+
+  try {
+    const { default: prisma } = await import('../db.server');
+    const googleIntegration = await (prisma as any).integration?.findFirst?.({ where: { shop: (session as any).shop, provider: 'google', isActive: true } });
+    const metaIntegration = await (prisma as any).integration?.findFirst?.({ where: { shop: (session as any).shop, provider: 'meta', isActive: true } });
+    googleConnected = !!googleIntegration;
+    metaConnected = !!metaIntegration;
+
+    if (googleConnected) {
+      ga4Data = getMockGA4Data();
+      gscData = getMockGSCData();
+    }
+    if (metaConnected) {
+      metaData = getMockMetaData();
+    }
+  } catch (e) {
+    // Integration table might not exist yet — that's OK
+  }
+
+  return json({ orders, prevOrders, orders6m, range, googleConnected, metaConnected, ga4Data, gscData, metaData });
 };
 
 /* ---- Styles ---- */
@@ -136,7 +238,9 @@ const PAID_CHANNELS = ['Meta', 'Google Ads', 'TikTok', 'Paid Other'];
 const theme = { colors: ['#7c3aed', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#14b8a6', '#6366f1', '#f97316'] };
 
 export default function MarketingAttribution() {
-  const { orders, prevOrders, orders6m } = useLoaderData<typeof loader>() as any;
+  const { orders, prevOrders, orders6m, googleConnected, metaConnected, metaData } = useLoaderData<typeof loader>() as any;
+  const [gaExpanded, setGaExpanded] = useState(false);
+  const [metaExpanded, setMetaExpanded] = useState(false);
   const cur = orders[0]?.totalPriceSet?.shopMoney?.currencyCode || 'USD';
   const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: cur, minimumFractionDigits: 0, maximumFractionDigits: 1 }).format(n);
   const pf = (o: any, f: string) => parseFloat(o?.[f]?.shopMoney?.amount || '0');
@@ -734,6 +838,96 @@ export default function MarketingAttribution() {
         <CC type="bar" series={[{ name: 'Revenue', data: waterfallData.map(d => d.y) }]} options={{ chart: { type: 'bar', toolbar: { show: false } }, xaxis: { categories: waterfallData.map(d => d.x) }, colors: waterfallData.map(d => d.fillColor), plotOptions: { bar: { borderRadius: 4, distributed: true, colors: { ranges: [] } } }, dataLabels: { enabled: true, formatter: (v: number) => v >= 1000 ? (v / 1000).toFixed(1) + 'K' : v.toString() }, legend: { show: false } }} height={300} />
       </div>
 
+      {/* ======== GOOGLE ANALYTICS INSIGHTS ======== */}
+      <div style={{ ...S.card, marginBottom: 24, cursor: 'pointer' }} onClick={() => setGaExpanded(!gaExpanded)}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 8, background: '#f59e0b', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14 }}>GA</div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>Google Analytics Insights</div>
+              <span style={{ ...S.statusBadge, background: googleConnected ? '#d1fae5' : '#fee2e2', color: googleConnected ? '#065f46' : '#991b1b' }}>
+                {googleConnected ? '● Connected' : '○ Not Connected'}
+              </span>
+            </div>
+          </div>
+          <span style={{ fontSize: 18, color: '#6b7280' }}>{gaExpanded ? '▲' : '▼'}</span>
+        </div>
+      </div>
+      {gaExpanded && (
+        <div style={{ marginBottom: 24 }}>
+          {googleConnected ? (
+            <div style={{ ...S.card, padding: 24, textAlign: 'center' as const, color: '#6b7280' }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>📊</div>
+              <div style={{ fontWeight: 600, fontSize: 15 }}>GA4 & Search Console charts loading...</div>
+              <div style={{ fontSize: 13, marginTop: 4 }}>Real session data, bounce rates, keyword rankings, and user flows will appear here once the GA4 charts component is integrated.</div>
+            </div>
+          ) : (
+            <div style={{ background: 'linear-gradient(135deg, #fef3c7, #fff7ed)', borderRadius: 12, padding: 32, textAlign: 'center' as const, border: '1px solid #fde68a' }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>📈</div>
+              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, color: '#1f2937' }}>Connect Google Analytics</h3>
+              <p style={{ color: '#6b7280', fontSize: 14, maxWidth: 500, margin: '0 auto 16px', lineHeight: 1.6 }}>
+                See where your visitors come from, how they behave, and which pages drive the most revenue. Unlock real session data, bounce rates, and conversion funnels.
+              </p>
+              <form method="post" action="/app/integrations">
+                <input type="hidden" name="intent" value="connect-google" />
+                <button type="submit" style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: '#f59e0b', color: '#fff', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+                  Connect GA4
+                </button>
+              </form>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ======== META ADVERTISING INSIGHTS ======== */}
+      <div style={{ ...S.card, marginBottom: 24, cursor: 'pointer' }} onClick={() => setMetaExpanded(!metaExpanded)}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 8, background: '#1877f2', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14 }}>M</div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>Meta Advertising Insights</div>
+              <span style={{ ...S.statusBadge, background: metaConnected ? '#d1fae5' : '#fee2e2', color: metaConnected ? '#065f46' : '#991b1b' }}>
+                {metaConnected ? '● Connected' : '○ Not Connected'}
+              </span>
+            </div>
+          </div>
+          <span style={{ fontSize: 18, color: '#6b7280' }}>{metaExpanded ? '▲' : '▼'}</span>
+        </div>
+      </div>
+      {metaExpanded && (
+        <div style={{ marginBottom: 24 }}>
+          {metaConnected && metaData ? (
+            <>
+              <MetaAdSpendVsRevenue data={metaData.adSpendVsRevenue} />
+              <MetaCampaignPerformance data={metaData.campaigns} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+                <MetaAudienceDemographics data={metaData.audience} />
+                <MetaCreativePerformance data={metaData.creatives} />
+              </div>
+              <MetaFrequencyReach data={metaData.frequencyReach} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+                <MetaCostTrend data={metaData.costTrend} />
+                <MetaAdFunnel data={metaData.adFunnel} />
+              </div>
+            </>
+          ) : (
+            <div style={{ background: 'linear-gradient(135deg, #dbeafe, #ede9fe)', borderRadius: 12, padding: 32, textAlign: 'center' as const, border: '1px solid #bfdbfe' }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>📣</div>
+              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, color: '#1f2937' }}>Connect Meta Business Manager</h3>
+              <p style={{ color: '#6b7280', fontSize: 14, maxWidth: 500, margin: '0 auto 16px', lineHeight: 1.6 }}>
+                See real ROAS, audience demographics, and creative performance. Unlock actual ad spend data from Facebook & Instagram campaigns.
+              </p>
+              <form method="post" action="/app/integrations">
+                <input type="hidden" name="intent" value="connect-meta" />
+                <button type="submit" style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: '#1877f2', color: '#fff', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+                  Connect Meta
+                </button>
+              </form>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ======== INTEGRATION SECTION ======== */}
       <div style={S.section}>INTEGRATIONS</div>
 
@@ -750,7 +944,10 @@ export default function MarketingAttribution() {
           <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>Unlock real session data, bounce rates, user flows, and accurate conversion tracking across all channels.</p>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: 12, color: '#9ca3af' }}>Last sync: Never</span>
-            <button style={{ ...S.connectBtn, background: '#f59e0b', color: '#fff' }} disabled>Connect GA4</button>
+            <form method="post" action="/app/integrations" style={{ display: 'inline' }}>
+              <input type="hidden" name="intent" value="connect-google" />
+              <button type="submit" style={{ ...S.connectBtn, background: '#f59e0b', color: '#fff' }}>Connect GA4</button>
+            </form>
           </div>
         </div>
 
@@ -760,13 +957,16 @@ export default function MarketingAttribution() {
             <div style={{ ...S.integrationLogo, background: '#3b82f6', color: '#fff' }}>GSC</div>
             <div>
               <div style={{ fontWeight: 700, fontSize: 15 }}>Google Search Console</div>
-              <span style={{ ...S.statusBadge, background: '#fee2e2', color: '#991b1b' }}>Not Connected</span>
+              <span style={{ ...S.statusBadge, background: googleConnected ? '#d1fae5' : '#fee2e2', color: googleConnected ? '#065f46' : '#991b1b' }}>{googleConnected ? 'Connected' : 'Not Connected'}</span>
             </div>
           </div>
           <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>Unlock organic keyword rankings, search impressions, CTR data, and indexing status for your store pages.</p>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: 12, color: '#9ca3af' }}>Last sync: Never</span>
-            <button style={{ ...S.connectBtn, background: '#3b82f6', color: '#fff' }} disabled>Connect GSC</button>
+            <form method="post" action="/app/integrations" style={{ display: 'inline' }}>
+              <input type="hidden" name="intent" value="connect-google" />
+              <button type="submit" style={{ ...S.connectBtn, background: '#3b82f6', color: '#fff' }}>Connect GSC</button>
+            </form>
           </div>
         </div>
 
@@ -776,13 +976,16 @@ export default function MarketingAttribution() {
             <div style={{ ...S.integrationLogo, background: '#1877f2', color: '#fff' }}>M</div>
             <div>
               <div style={{ fontWeight: 700, fontSize: 15 }}>Meta Business Manager</div>
-              <span style={{ ...S.statusBadge, background: '#fee2e2', color: '#991b1b' }}>Not Connected</span>
+              <span style={{ ...S.statusBadge, background: metaConnected ? '#d1fae5' : '#fee2e2', color: metaConnected ? '#065f46' : '#991b1b' }}>{metaConnected ? 'Connected' : 'Not Connected'}</span>
             </div>
           </div>
           <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>Unlock real ad spend, CPM, CTR, ROAS from Facebook & Instagram campaigns with actual Meta Ads data.</p>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: 12, color: '#9ca3af' }}>Last sync: Never</span>
-            <button style={{ ...S.connectBtn, background: '#1877f2', color: '#fff' }} disabled>Connect Meta</button>
+            <form method="post" action="/app/integrations" style={{ display: 'inline' }}>
+              <input type="hidden" name="intent" value="connect-meta" />
+              <button type="submit" style={{ ...S.connectBtn, background: '#1877f2', color: '#fff' }}>Connect Meta</button>
+            </form>
           </div>
         </div>
       </div>
