@@ -164,7 +164,9 @@ function getMockGSCData() {
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
-  const range = dateRange(30);
+  const url = new URL(request.url);
+  const daysParam = parseInt(url.searchParams.get('days') || '30', 10) || 30;
+  const range = dateRange(daysParam);
   const query = `created_at:>='${range.from}' created_at:<='${range.to}'`;
   const orders = await fetchAllOrders(admin, query);
   const prevRange = dateRange(60);
