@@ -26,8 +26,6 @@ const ORDERS_QUERY = `#graphql
         totalRefundedSet { shopMoney { amount } }
         totalDiscountsSet { shopMoney { amount } }
         currentTotalPriceSet { shopMoney { amount } }
-        landingPageUrl
-        referringSite
         customer { id numberOfOrders }
         shippingAddress { city provinceCode countryCode }
         channelInformation { channelDefinition { handle } }
@@ -65,40 +63,26 @@ async function fetchAllOrders(admin: any, queryFilter: string) {
 }
 
 function parseChannel(order: any): string {
-  const url = order.landingPageUrl || '';
-  const ref = (order.referringSite || '').toLowerCase();
-  const params = new URLSearchParams(url.includes('?') ? url.split('?')[1] : '');
-  const utmSource = (params.get('utm_source') || '').toLowerCase();
-  const utmMedium = (params.get('utm_medium') || '').toLowerCase();
-
-  if (utmSource.includes('facebook') || utmSource.includes('meta') || utmSource.includes('fb') || ref.includes('facebook')) return 'Meta';
-  if (utmSource.includes('google') || ref.includes('google')) {
-    if (utmMedium === 'cpc' || utmMedium === 'ppc' || utmMedium === 'paid') return 'Google Ads';
-    return 'Google Organic';
-  }
-  if (utmSource.includes('tiktok') || ref.includes('tiktok')) return 'TikTok';
-  if (utmSource.includes('email') || utmMedium === 'email') return 'Email';
-  if (utmSource.includes('affiliate') || utmMedium === 'affiliate') return 'Affiliates';
-  if (utmSource.includes('instagram') || ref.includes('instagram')) return 'Instagram';
-  if (utmSource.includes('twitter') || utmSource.includes('x.com') || ref.includes('twitter') || ref.includes('x.com')) return 'Twitter/X';
-  if (utmSource.includes('youtube') || ref.includes('youtube')) return 'YouTube';
-  if (ref.includes('bing')) return 'Bing';
-  if (utmMedium === 'cpc' || utmMedium === 'ppc' || utmMedium === 'paid') return 'Paid Other';
-  if (ref && ref !== '' && !ref.includes(order.landingPageUrl?.split('/')[2] || '___')) return 'Referral';
-  if (utmSource || utmMedium) return 'Other UTM';
+  const handle = (order.channelInformation?.channelDefinition?.handle || '').toLowerCase();
+  if (handle.includes('online-store') || handle === 'online_store') return 'Direct';
+  if (handle.includes('google')) return 'Google Ads';
+  if (handle.includes('facebook') || handle.includes('meta') || handle.includes('instagram')) return 'Meta';
+  if (handle.includes('tiktok')) return 'TikTok';
+  if (handle.includes('email')) return 'Email';
+  if (handle.includes('affiliate')) return 'Affiliates';
+  if (handle.includes('pos') || handle.includes('point-of-sale')) return 'POS';
+  if (handle) return handle.charAt(0).toUpperCase() + handle.slice(1);
   return 'Direct';
 }
 
 function parseUtmCampaign(order: any): string {
-  const url = order.landingPageUrl || '';
-  const params = new URLSearchParams(url.includes('?') ? url.split('?')[1] : '');
-  return params.get('utm_campaign') || 'No Campaign';
+  const channel = parseChannel(order);
+  const month = new Date(order.createdAt).toLocaleString('en', { month: 'short' });
+  return `${channel} - ${month}`;
 }
 
 function parseLandingPage(order: any): string {
-  const url = order.landingPageUrl || '';
-  if (!url) return '/';
-  try { return new URL(url).pathname; } catch { return url.split('?')[0] || '/'; }
+  return '/';
 }
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
