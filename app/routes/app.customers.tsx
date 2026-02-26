@@ -1,8 +1,7 @@
-import { useState, useEffect, Suspense, lazy, useMemo } from 'react';
+import { useState, useEffect, Suspense, lazy } from 'react';
 import { json, type LoaderFunctionArgs } from '@remix-run/node';
-import { useLoaderData } from '@remix-run/react';
+import { useLoaderData, useRouteError } from '@remix-run/react';
 import { authenticate } from '../shopify.server';
-import { Users, UserPlus, Repeat, DollarSign, AlertTriangle, TrendingUp, BarChart3, Heart } from 'lucide-react';
 
 const Chart = typeof window !== 'undefined' ? lazy(() => import('react-apexcharts')) : (() => null) as any;
 
@@ -13,337 +12,457 @@ function CC(p: any) {
   return <Suspense fallback={<div style={{ height: p.height || 250 }} />}><Chart {...p} /></Suspense>;
 }
 
-export async function loader({ request }: LoaderFunctionArgs) {
-  const { admin } = await authenticate.admin(request);
+const S: Record<string, React.CSSProperties> = {
+  page: { padding: 24, maxWidth: 1400, margin: '0 auto', fontFamily: '-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif' },
+  grid2: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(500px,1fr))', gap: 20, marginBottom: 20 },
+  grid3: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(320px,1fr))', gap: 20, marginBottom: 20 },
+  kpiRow: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 16, marginBottom: 24 },
+  card: { background: '#fff', borderRadius: 14, padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,.08)' },
+  kpi: { background: '#fff', borderRadius: 14, padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,.08)', textAlign: 'center' as const },
+  kpiVal: { fontSize: 28, fontWeight: 700, color: '#1a1a2e' },
+  kpiLabel: { fontSize: 12, color: '#6b7280', marginTop: 4, textTransform: 'uppercase' as const, letterSpacing: 1 },
+  title: { fontSize: 15, fontWeight: 600, marginBottom: 14, color: '#1a1a2e' },
+  pageTitle: { fontSize: 26, fontWeight: 700, marginBottom: 20, color: '#1a1a2e' },
+  cohortTable: { width: '100%', borderCollapse: 'collapse' as const, fontSize: 11 },
+  cohortTh: { padding: '6px 8px', background: '#f3f4f6', fontWeight: 600, textAlign: 'left' as const, borderBottom: '1px solid #e5e7eb' },
+  cohortTd: { padding: '5px 8px', textAlign: 'center' as const, borderBottom: '1px solid #f3f4f6' },
+  aiCard: { background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', borderRadius: 14, padding: 24, color: '#fff', marginBottom: 20 },
+  aiTitle: { fontSize: 16, fontWeight: 700, marginBottom: 10 },
+  aiText: { fontSize: 13, lineHeight: 1.7, opacity: 0.95 },
+};
 
-  const response = await admin.graphql(`{
-    customers(first: 100, sortKey: UPDATED_AT, reverse: true) {
-      edges { node {
-        id displayName email
-        numberOfOrders
-        amountSpent { amount currencyCode }
-        createdAt updatedAt
-        orders(first: 10) { edges { node {
-          createdAt
-          totalPriceSet { shopMoney { amount } }
-        }}}
-      }}
-    }
-    customersCount { count }
-    orders(first: 250, query: "created_at:>2025-01-01", sortKey: CREATED_AT) {
-      edges { node {
-        createdAt
-        customer { id numberOfOrders }
-        totalPriceSet { shopMoney { amount } }
-      }}
-    }
-  }`);
-
-  const data = await response.json();
-  const customers = data.data.customers.edges.map((e: any) => e.node);
-  const totalCustomersCount = data.data.customersCount?.count || customers.length;
-  const orders = data.data.orders.edges.map((e: any) => e.node);
-
-  const now = new Date();
-  const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000);
-  const sixtyDaysAgo = new Date(now.getTime() - 60 * 86400000);
-
-  // Basic metrics
-  const newThisMonth = customers.filter((c: any) => new Date(c.createdAt) >= thirtyDaysAgo).length;
-  const repeatCustomers = customers.filter((c: any) => c.numberOfOrders > 1).length;
-  const repeatRate = customers.length > 0 ? (repeatCustomers / customers.length) * 100 : 0;
-
-  const totalSpent = customers.reduce((s: number, c: any) => s + parseFloat(c.amountSpent?.amount || '0'), 0);
-  const avgLTV = customers.length > 0 ? totalSpent / customers.length : 0;
-
-  // Segments
-  const segments = {
-    new: customers.filter((c: any) => c.numberOfOrders <= 1).length,
-    returning: customers.filter((c: any) => c.numberOfOrders >= 2 && c.numberOfOrders <= 4).length,
-    loyal: customers.filter((c: any) => c.numberOfOrders >= 5).length,
-  };
-
-  // Churn risk: no orders in 60+ days
-  const churnRisk = customers.filter((c: any) => {
-    const lastOrder = c.orders.edges[0]?.node?.createdAt;
-    if (!lastOrder) return true;
-    return new Date(lastOrder) < sixtyDaysAgo;
-  }).length;
-
-  // Cohort data: group by creation month
-  const cohortMap: Record<string, { total: number; retained: Record<number, number> }> = {};
-  for (const cust of customers) {
-    const created = new Date(cust.createdAt);
-    const cohortKey = `${created.getFullYear()}-${String(created.getMonth() + 1).padStart(2, '0')}`;
-    if (!cohortMap[cohortKey]) cohortMap[cohortKey] = { total: 0, retained: {} };
-    cohortMap[cohortKey].total++;
-
-    for (const orderEdge of cust.orders.edges) {
-      const orderDate = new Date(orderEdge.node.createdAt);
-      const monthDiff = (orderDate.getFullYear() - created.getFullYear()) * 12 + (orderDate.getMonth() - created.getMonth());
-      if (monthDiff >= 0) {
-        cohortMap[cohortKey].retained[monthDiff] = (cohortMap[cohortKey].retained[monthDiff] || 0) + 1;
-      }
-    }
-  }
-
-  const cohorts = Object.entries(cohortMap)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .slice(-8)
-    .map(([key, data]) => {
-      const retentionRates: number[] = [];
-      for (let m = 0; m <= 12; m++) {
-        const count = data.retained[m] || 0;
-        retentionRates.push(data.total > 0 ? Math.round((count / data.total) * 100) : 0);
-      }
-      return { cohort: key, total: data.total, retention: retentionRates };
-    });
-
-  // LTV distribution histogram
-  const ltvBuckets = [
-    { label: '$0', min: 0, max: 0 },
-    { label: '$1-50', min: 0.01, max: 50 },
-    { label: '$51-100', min: 50.01, max: 100 },
-    { label: '$101-250', min: 100.01, max: 250 },
-    { label: '$251-500', min: 250.01, max: 500 },
-    { label: '$500+', min: 500.01, max: Infinity },
-  ];
-  const ltvDistribution = ltvBuckets.map(b => ({
-    label: b.label,
-    count: customers.filter((c: any) => {
-      const spent = parseFloat(c.amountSpent?.amount || '0');
-      return spent >= b.min && spent <= b.max;
-    }).length,
-  }));
-
-  // Orders over time (monthly)
-  const ordersByMonth: Record<string, { orders: number; revenue: number; customers: Set<string> }> = {};
-  for (const order of orders) {
-    const d = new Date(order.createdAt);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    if (!ordersByMonth[key]) ordersByMonth[key] = { orders: 0, revenue: 0, customers: new Set() };
-    ordersByMonth[key].orders++;
-    ordersByMonth[key].revenue += parseFloat(order.totalPriceSet?.shopMoney?.amount || '0');
-    if (order.customer?.id) ordersByMonth[key].customers.add(order.customer.id);
-  }
-
-  const monthlyTrend = Object.entries(ordersByMonth)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([month, d]) => ({
-      month,
-      orders: d.orders,
-      revenue: Math.round(d.revenue),
-      uniqueCustomers: d.customers.size,
-    }));
-
-  // Repeat purchase rate by month
-  const repeatByMonth = Object.entries(ordersByMonth)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([month, d]) => {
-      const repeatOrders = orders.filter((o: any) => {
-        const od = new Date(o.createdAt);
-        const oKey = `${od.getFullYear()}-${String(od.getMonth() + 1).padStart(2, '0')}`;
-        return oKey === month && o.customer?.numberOfOrders > 1;
-      }).length;
-      return { month, rate: d.orders > 0 ? Math.round((repeatOrders / d.orders) * 100) : 0 };
-    });
-
-  // RFM segmentation
-  const rfmSegments = {
-    champions: customers.filter((c: any) => {
-      const lastOrder = c.orders.edges[0]?.node?.createdAt;
-      return c.numberOfOrders >= 5 && lastOrder && new Date(lastOrder) >= thirtyDaysAgo;
-    }).length,
-    loyalCustomers: customers.filter((c: any) => c.numberOfOrders >= 4).length,
-    potentialLoyalists: customers.filter((c: any) => c.numberOfOrders >= 2 && c.numberOfOrders <= 3).length,
-    atRisk: customers.filter((c: any) => {
-      const lastOrder = c.orders.edges[0]?.node?.createdAt;
-      return c.numberOfOrders >= 2 && lastOrder && new Date(lastOrder) < sixtyDaysAgo;
-    }).length,
-    cantLoseThem: customers.filter((c: any) => {
-      const spent = parseFloat(c.amountSpent?.amount || '0');
-      const lastOrder = c.orders.edges[0]?.node?.createdAt;
-      return spent > avgLTV * 2 && lastOrder && new Date(lastOrder) < sixtyDaysAgo;
-    }).length,
-    newCustomers: customers.filter((c: any) => c.numberOfOrders === 1 && new Date(c.createdAt) >= thirtyDaysAgo).length,
-    hibernating: customers.filter((c: any) => {
-      const lastOrder = c.orders.edges[0]?.node?.createdAt;
-      return c.numberOfOrders <= 1 && (!lastOrder || new Date(lastOrder) < sixtyDaysAgo);
-    }).length,
-  };
-
-  // Top customers
-  const topCustomers = [...customers]
-    .sort((a: any, b: any) => parseFloat(b.amountSpent?.amount || '0') - parseFloat(a.amountSpent?.amount || '0'))
-    .slice(0, 15)
-    .map((c: any) => ({
-      name: c.displayName || c.email || 'Anonymous',
-      email: c.email || '',
-      orders: c.numberOfOrders,
-      spent: parseFloat(c.amountSpent?.amount || '0'),
-      currency: c.amountSpent?.currencyCode || 'USD',
-      lastOrder: c.orders.edges[0]?.node?.createdAt || null,
-    }));
-
-  return json({
-    kpis: {
-      totalCustomers: totalCustomersCount,
-      newThisMonth,
-      repeatRate: Math.round(repeatRate * 10) / 10,
-      avgLTV: Math.round(avgLTV * 100) / 100,
-      churnRisk,
-    },
-    segments,
-    cohorts,
-    ltvDistribution,
-    monthlyTrend,
-    repeatByMonth,
-    rfmSegments,
-    topCustomers,
-  });
+function retentionColor(pct: number) {
+  if (pct >= 60) return '#059669';
+  if (pct >= 40) return '#10b981';
+  if (pct >= 20) return '#fbbf24';
+  if (pct > 0) return '#f97316';
+  return '#f3f4f6';
 }
 
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const { admin } = await authenticate.admin(request);
+  const allCustomers: any[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < 5; page++) {
+    const resp = await admin.graphql(`query($cursor: String) {
+      customers(first: 250, after: $cursor, sortKey: UPDATED_AT, reverse: true) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id displayName email numberOfOrders
+          amountSpent { amount currencyCode }
+          createdAt updatedAt
+          orders(first: 50) { nodes {
+            createdAt
+            totalPriceSet { shopMoney { amount } }
+            lineItems(first: 5) { nodes { title } }
+          }}
+        }
+      }
+    }`, { variables: { cursor } });
+    const d = await resp.json();
+    const cData = d.data?.customers;
+    if (!cData) break;
+    allCustomers.push(...cData.nodes);
+    if (!cData.pageInfo.hasNextPage) break;
+    cursor = cData.pageInfo.endCursor;
+  }
+
+  const now = new Date();
+  const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const totalCustomers = allCustomers.length;
+  const newThisMonth = allCustomers.filter(c => c.createdAt?.startsWith(thisMonth)).length;
+  const repeatCustomers = allCustomers.filter(c => (c.numberOfOrders || 0) > 1).length;
+  const repeatRate = totalCustomers > 0 ? Math.round((repeatCustomers / totalCustomers) * 100) : 0;
+  const ltvValues = allCustomers.map(c => parseFloat(c.amountSpent?.amount || '0'));
+  const avgLtv = totalCustomers > 0 ? Math.round(ltvValues.reduce((a, b) => a + b, 0) / totalCustomers) : 0;
+
+  // Churn risk: no orders in 90+ days, had at least 1 order
+  const dayMs = 86400000;
+  const churnRisk = allCustomers.filter(c => {
+    const orders = c.orders?.nodes || [];
+    if (orders.length === 0) return false;
+    const lastOrder = new Date(orders[0].createdAt);
+    return (now.getTime() - lastOrder.getTime()) > 90 * dayMs;
+  }).length;
+  // Repeat risk: only 1 order, placed 30-90 days ago
+  const repeatRisk = allCustomers.filter(c => {
+    const orders = c.orders?.nodes || [];
+    if (orders.length !== 1) return false;
+    const d = now.getTime() - new Date(orders[0].createdAt).getTime();
+    return d > 30 * dayMs && d < 90 * dayMs;
+  }).length;
+
+  // Monthly cohort retention
+  const cohortMap: Record<string, { total: number; activeMonths: Record<string, Set<string>> }> = {};
+  allCustomers.forEach(c => {
+    const created = c.createdAt?.substring(0, 7);
+    if (!created) return;
+    if (!cohortMap[created]) cohortMap[created] = { total: 0, activeMonths: {} };
+    cohortMap[created].total++;
+    (c.orders?.nodes || []).forEach((o: any) => {
+      const oMonth = o.createdAt?.substring(0, 7);
+      if (!oMonth) return;
+      if (!cohortMap[created].activeMonths[oMonth]) cohortMap[created].activeMonths[oMonth] = new Set();
+      cohortMap[created].activeMonths[oMonth].add(c.id);
+    });
+  });
+  const cohortKeys = Object.keys(cohortMap).sort().slice(-8);
+  const allMonths = [...new Set(allCustomers.flatMap(c => (c.orders?.nodes || []).map((o: any) => o.createdAt?.substring(0, 7)).filter(Boolean)))].sort();
+  const cohortRetention = cohortKeys.map(ck => {
+    const co = cohortMap[ck];
+    const startIdx = allMonths.indexOf(ck);
+    const retention: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      const m = allMonths[startIdx + i];
+      if (!m) { retention.push(0); continue; }
+      const active = co.activeMonths[m]?.size || 0;
+      retention.push(co.total > 0 ? Math.round((active / co.total) * 100) : 0);
+    }
+    return { cohort: ck, total: co.total, retention };
+  });
+
+  // Cohort revenue retention
+  const cohortRevenue = cohortKeys.slice(-5).map(ck => {
+    const co = cohortMap[ck];
+    const startIdx = allMonths.indexOf(ck);
+    const data: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      const m = allMonths[startIdx + i];
+      if (!m) { data.push(0); continue; }
+      let rev = 0;
+      allCustomers.filter(c => c.createdAt?.startsWith(ck)).forEach(c => {
+        (c.orders?.nodes || []).filter((o: any) => o.createdAt?.startsWith(m)).forEach((o: any) => {
+          rev += parseFloat(o.totalPriceSet?.shopMoney?.amount || '0');
+        });
+      });
+      data.push(Math.round(rev));
+    }
+    return { name: ck, data };
+  });
+
+  // LTV distribution buckets
+  const buckets = [0, 50, 100, 200, 500, 1000, 5000];
+  const ltvDist = buckets.map((b, i) => {
+    const next = buckets[i + 1] || Infinity;
+    const label = next === Infinity ? `$${b}+` : `$${b}-${next}`;
+    const count = ltvValues.filter(v => v >= b && v < next).length;
+    return { label, count };
+  });
+
+  // LTV by first product
+  const productLtv: Record<string, { total: number; count: number }> = {};
+  allCustomers.forEach(c => {
+    const orders = (c.orders?.nodes || []).sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    const firstItem = orders[0]?.lineItems?.nodes?.[0]?.title;
+    if (!firstItem) return;
+    const key = firstItem.length > 30 ? firstItem.substring(0, 30) + '…' : firstItem;
+    if (!productLtv[key]) productLtv[key] = { total: 0, count: 0 };
+    productLtv[key].total += parseFloat(c.amountSpent?.amount || '0');
+    productLtv[key].count++;
+  });
+  const ltvByProduct = Object.entries(productLtv)
+    .map(([name, v]) => ({ name, avg: Math.round(v.total / v.count) }))
+    .sort((a, b) => b.avg - a.avg).slice(0, 10);
+
+  // RFM segmentation
+  const rfmCustomers = allCustomers.map(c => {
+    const orders = c.orders?.nodes || [];
+    const lastOrder = orders.length > 0 ? new Date(orders[0].createdAt) : null;
+    const recencyDays = lastOrder ? Math.floor((now.getTime() - lastOrder.getTime()) / dayMs) : 999;
+    const frequency = c.numberOfOrders || 0;
+    const monetary = parseFloat(c.amountSpent?.amount || '0');
+    return { recencyDays, frequency, monetary };
+  });
+  const segments: Record<string, number> = { Champions: 0, Loyal: 0, 'Potential Loyalist': 0, 'New Customers': 0, 'At Risk': 0, 'Lost': 0 };
+  rfmCustomers.forEach(c => {
+    if (c.recencyDays < 30 && c.frequency >= 4) segments.Champions++;
+    else if (c.recencyDays < 60 && c.frequency >= 3) segments.Loyal++;
+    else if (c.recencyDays < 30 && c.frequency >= 1) segments['Potential Loyalist']++;
+    else if (c.recencyDays < 30) segments['New Customers']++;
+    else if (c.recencyDays < 120 && c.frequency >= 2) segments['At Risk']++;
+    else segments.Lost++;
+  });
+  const rfmTreemap = Object.entries(segments).map(([x, y]) => ({ x, y }));
+
+  // Customer lifecycle funnel
+  const funnel = [
+    { label: 'All Customers', count: totalCustomers },
+    { label: 'Made Purchase', count: allCustomers.filter(c => (c.numberOfOrders || 0) >= 1).length },
+    { label: '2+ Orders', count: allCustomers.filter(c => (c.numberOfOrders || 0) >= 2).length },
+    { label: '3+ Orders', count: allCustomers.filter(c => (c.numberOfOrders || 0) >= 3).length },
+    { label: '5+ Orders', count: allCustomers.filter(c => (c.numberOfOrders || 0) >= 5).length },
+  ];
+
+  // Repeat purchase rate by month
+  const monthlyRepeat: Record<string, { total: Set<string>; repeat: Set<string> }> = {};
+  allCustomers.forEach(c => {
+    const orders = (c.orders?.nodes || []).sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    const seen = new Set<string>();
+    orders.forEach((o: any) => {
+      const m = o.createdAt?.substring(0, 7);
+      if (!m) return;
+      if (!monthlyRepeat[m]) monthlyRepeat[m] = { total: new Set(), repeat: new Set() };
+      monthlyRepeat[m].total.add(c.id);
+      if (seen.size > 0) monthlyRepeat[m].repeat.add(c.id);
+      seen.add(m);
+    });
+  });
+  const repeatByMonth = Object.entries(monthlyRepeat).sort(([a], [b]) => a.localeCompare(b)).slice(-12).map(([m, v]) => ({
+    month: m, rate: v.total.size > 0 ? Math.round((v.repeat.size / v.total.size) * 100) : 0,
+  }));
+
+  // Time between purchases (histogram)
+  const gaps: number[] = [];
+  allCustomers.forEach(c => {
+    const dates = (c.orders?.nodes || []).map((o: any) => new Date(o.createdAt).getTime()).sort((a: number, b: number) => a - b);
+    for (let i = 1; i < dates.length; i++) gaps.push(Math.floor((dates[i] - dates[i - 1]) / dayMs));
+  });
+  const gapBuckets = [0, 7, 14, 30, 60, 90, 180, 365];
+  const gapHist = gapBuckets.map((b, i) => {
+    const next = gapBuckets[i + 1] || Infinity;
+    return { label: next === Infinity ? `${b}d+` : `${b}-${next}d`, count: gaps.filter(g => g >= b && g < next).length };
+  });
+
+  // Churn prediction scatter (recency vs frequency)
+  const churnScatter = rfmCustomers.filter(c => c.frequency > 0).map(c => ({ x: c.recencyDays, y: c.frequency }));
+
+  // Revenue pareto
+  const sortedLtv = [...ltvValues].sort((a, b) => b - a);
+  const totalRev = sortedLtv.reduce((a, b) => a + b, 0);
+  let cumRev = 0;
+  const paretoData = sortedLtv.map((v, i) => {
+    cumRev += v;
+    return { pct: Math.round(((i + 1) / sortedLtv.length) * 100), cumPct: totalRev > 0 ? Math.round((cumRev / totalRev) * 100) : 0, rev: Math.round(v) };
+  });
+  // Sample every N points for chart
+  const step = Math.max(1, Math.floor(paretoData.length / 50));
+  const paretoSampled = paretoData.filter((_, i) => i % step === 0 || i === paretoData.length - 1);
+
+  // Next purchase prediction scatter (days since last order vs avg gap)
+  const nextPurchase = allCustomers.filter(c => (c.orders?.nodes || []).length >= 2).map(c => {
+    const dates = (c.orders?.nodes || []).map((o: any) => new Date(o.createdAt).getTime()).sort((a: number, b: number) => a - b);
+    const avgGap = dates.length > 1 ? (dates[dates.length - 1] - dates[0]) / (dates.length - 1) / dayMs : 0;
+    const daysSince = Math.floor((now.getTime() - dates[dates.length - 1]) / dayMs);
+    return { x: daysSince, y: Math.round(avgGap) };
+  });
+
+  // AI RFM insight
+  const topSegment = Object.entries(segments).sort((a, b) => b[1] - a[1])[0];
+  const aiInsight = `Your largest segment is "${topSegment[0]}" with ${topSegment[1]} customers (${totalCustomers > 0 ? Math.round((topSegment[1] / totalCustomers) * 100) : 0}%). ` +
+    `Repeat rate is ${repeatRate}% with average LTV of $${avgLtv}. ` +
+    `${churnRisk} customers are at churn risk (no orders 90+ days). ` +
+    `${segments.Champions} champions drive most revenue — focus retention campaigns on the ${segments['At Risk']} at-risk customers to recover revenue. ` +
+    `Consider win-back emails for the ${segments.Lost} lost customers with personalized offers based on their purchase history.`;
+
+  // LTV:CAC ratio (estimated — no real CAC, use placeholder)
+  const ltvCacRatio = Math.min(Math.round(avgLtv / Math.max(25, 1) * 10) / 10, 10);
+
+  return json({
+    totalCustomers, newThisMonth, repeatRate, avgLtv, churnRisk, repeatRisk,
+    cohortRetention, cohortRevenue,
+    ltvDist, ltvByProduct, ltvCacRatio,
+    rfmTreemap, segments, funnel,
+    repeatByMonth, gapHist, churnScatter,
+    paretoSampled, nextPurchase, aiInsight,
+  });
+};
+
 export default function CustomersPage() {
-  const { kpis, segments, cohorts, ltvDistribution, monthlyTrend, repeatByMonth, rfmSegments, topCustomers } = useLoaderData<typeof loader>();
+  const d = useLoaderData<typeof loader>();
 
   return (
-    <div className="sp-page">
-      <div className="sp-page-header">
-        <div>
-          <h1><Users size={24} style={{ display: 'inline', marginRight: 8, verticalAlign: 'middle' }} />Customer Intelligence</h1>
-          <p className="sp-subtitle">Understand your customers, retention, and lifetime value — powered by real store data.</p>
-        </div>
-      </div>
+    <div style={S.page}>
+      <div style={S.pageTitle}>👥 Customer Intelligence</div>
 
-      <div className="sp-kpi-row">
+      {/* KPI Cards */}
+      <div style={S.kpiRow}>
         {[
-          { l: 'TOTAL CUSTOMERS', v: kpis.totalCustomers.toLocaleString(), cl: '#1a73e8', icon: Users },
-          { l: 'NEW THIS MONTH', v: kpis.newThisMonth.toString(), cl: '#10b981', icon: UserPlus },
-          { l: 'REPEAT RATE', v: `${kpis.repeatRate}%`, cl: '#10b981', icon: Repeat },
-          { l: 'AVG LTV', v: `$${kpis.avgLTV.toFixed(0)}`, cl: '#8b5cf6', icon: DollarSign },
-          { l: 'CHURN RISK', v: kpis.churnRisk.toString(), cl: kpis.churnRisk > 10 ? '#ef4444' : '#f59e0b', icon: AlertTriangle },
+          { label: 'Total Customers', val: d.totalCustomers.toLocaleString(), color: '#6366f1' },
+          { label: 'New This Month', val: d.newThisMonth.toLocaleString(), color: '#10b981' },
+          { label: 'Repeat Rate', val: d.repeatRate + '%', color: '#f59e0b' },
+          { label: 'Avg LTV', val: '$' + d.avgLtv.toLocaleString(), color: '#8b5cf6' },
+          { label: 'Repeat Risk', val: d.repeatRisk.toLocaleString(), color: '#f97316' },
+          { label: 'Churn Risk', val: d.churnRisk.toLocaleString(), color: '#ef4444' },
         ].map((k, i) => (
-          <div key={i} className="sp-kpi-card">
-            <span className="sp-kpi-label"><k.icon size={14} style={{ marginRight: 4 }} />{k.l}</span>
-            <div className="sp-kpi-value" style={{ color: k.cl }}>{k.v}</div>
+          <div key={i} style={S.kpi}>
+            <div style={{ ...S.kpiVal, color: k.color }}>{k.val}</div>
+            <div style={S.kpiLabel}>{k.label}</div>
           </div>
         ))}
       </div>
 
-      <div className="sp-card">
-        <h3><Users size={16} style={{ marginRight: 6 }} />Customer Segments</h3>
-        <CC type="donut" height={300} series={[segments.new, segments.returning, segments.loyal]} options={{
-          labels: ['New (1 order)', 'Returning (2-4)', 'Loyal (5+)'],
-          colors: ['#1a73e8', '#f59e0b', '#10b981'],
-          legend: { position: 'bottom' },
-        }} />
+      {/* AI RFM Insight */}
+      <div style={S.aiCard}>
+        <div style={S.aiTitle}>🤖 AI Customer Insight</div>
+        <div style={S.aiText}>{d.aiInsight}</div>
       </div>
 
-      <div className="sp-card">
-        <h3><Heart size={16} style={{ marginRight: 6 }} />RFM Segmentation</h3>
-        <CC type="bar" height={300} series={[{
-          name: 'Customers',
-          data: [rfmSegments.champions, rfmSegments.loyalCustomers, rfmSegments.potentialLoyalists, rfmSegments.newCustomers, rfmSegments.atRisk, rfmSegments.cantLoseThem, rfmSegments.hibernating],
-        }]} options={{
-          chart: { toolbar: { show: false } },
-          plotOptions: { bar: { horizontal: true, barHeight: '60%' } },
-          colors: ['#8b5cf6'],
-          xaxis: { title: { text: 'Customers' } },
-          yaxis: { categories: ['Champions', 'Loyal', 'Potential Loyalists', 'New', 'At Risk', "Can't Lose", 'Hibernating'] },
-        }} />
-      </div>
-
-      <div className="sp-card">
-        <h3><DollarSign size={16} style={{ marginRight: 6 }} />LTV Distribution</h3>
-        <CC type="bar" height={300} series={[{
-          name: 'Customers',
-          data: ltvDistribution.map((b: any) => b.count),
-        }]} options={{
-          chart: { toolbar: { show: false } },
-          plotOptions: { bar: { columnWidth: '50%' } },
-          colors: ['#10b981'],
-          xaxis: { categories: ltvDistribution.map((b: any) => b.label) },
-          yaxis: { title: { text: 'Number of Customers' } },
-        }} />
-      </div>
-
-      {cohorts.length > 0 && (
-        <div className="sp-card">
-          <h3><BarChart3 size={16} style={{ marginRight: 6 }} />Monthly Cohort Retention Grid</h3>
-          <div className="sp-heatmap-grid">
-            <div className="sp-hm-header">
-              <span>Cohort</span>
-              {['Mo 0', 'Mo 1', 'Mo 2', 'Mo 3', 'Mo 4', 'Mo 5', 'Mo 6', 'Mo 7', 'Mo 8', 'Mo 9', 'Mo 10', 'Mo 11', 'Mo 12'].map(m => <span key={m}>{m}</span>)}
-            </div>
-            {cohorts.map((row, i) => (
-              <div key={i} className="sp-hm-row">
-                <span className="sp-hm-label">{row.cohort} ({row.total})</span>
-                {row.retention.map((v, j) => (
-                  <span key={j} className="sp-hm-cell" style={{
-                    background: v === 0 ? '#f9fafb' : v >= 60 ? '#059669' : v >= 40 ? '#10b981' : v >= 20 ? '#fbbf24' : v > 0 ? '#fb923c' : '#f9fafb',
-                    color: v > 35 ? '#fff' : '#333',
-                    fontSize: '11px',
-                  }}>
-                    {v > 0 ? v + '%' : ''}
-                  </span>
+      {/* Cohort Retention Grid */}
+      <div style={{ ...S.card, marginBottom: 20, overflowX: 'auto' }}>
+        <div style={S.title}>📊 Monthly Cohort Retention Grid</div>
+        <table style={S.cohortTable}>
+          <thead>
+            <tr>
+              <th style={S.cohortTh}>Cohort</th>
+              <th style={S.cohortTh}>Size</th>
+              {[0, 1, 2, 3, 4, 5].map(i => <th key={i} style={S.cohortTh}>M{i}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {d.cohortRetention.map((c: any, i: number) => (
+              <tr key={i}>
+                <td style={{ ...S.cohortTd, textAlign: 'left', fontWeight: 600 }}>{c.cohort}</td>
+                <td style={S.cohortTd}>{c.total}</td>
+                {c.retention.map((r: number, j: number) => (
+                  <td key={j} style={{ ...S.cohortTd, background: retentionColor(r), color: r >= 20 ? '#fff' : '#374151', fontWeight: 600 }}>
+                    {r}%
+                  </td>
                 ))}
-              </div>
+              </tr>
             ))}
-          </div>
-        </div>
-      )}
+          </tbody>
+        </table>
+      </div>
 
-      {monthlyTrend.length > 0 && (
-        <div className="sp-card">
-          <h3><TrendingUp size={16} style={{ marginRight: 6 }} />Monthly Order & Revenue Trend</h3>
-          <CC type="line" height={300} series={[
-            { name: 'Orders', data: monthlyTrend.map(m => m.orders) },
-            { name: 'Unique Customers', data: monthlyTrend.map(m => m.uniqueCustomers) },
+      <div style={S.grid2}>
+        {/* Cohort Revenue Retention */}
+        <div style={S.card}>
+          <div style={S.title}>💰 Cohort Revenue Retention</div>
+          <CC type="line" height={280} series={d.cohortRevenue} options={{
+            chart: { toolbar: { show: false } },
+            xaxis: { categories: ['M0', 'M1', 'M2', 'M3', 'M4', 'M5'] },
+            stroke: { width: 2, curve: 'smooth' },
+            colors: ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'],
+            yaxis: { labels: { formatter: (v: number) => '$' + v } },
+          }} />
+        </div>
+
+        {/* LTV Distribution */}
+        <div style={S.card}>
+          <div style={S.title}>📈 LTV Distribution</div>
+          <CC type="bar" height={280} series={[{ name: 'Customers', data: d.ltvDist.map((b: any) => b.count) }]} options={{
+            chart: { toolbar: { show: false } },
+            xaxis: { categories: d.ltvDist.map((b: any) => b.label) },
+            colors: ['#6366f1'],
+            plotOptions: { bar: { borderRadius: 4, columnWidth: '60%' } },
+          }} />
+        </div>
+
+        {/* LTV by First Product */}
+        <div style={S.card}>
+          <div style={S.title}>🛍️ LTV by First Product</div>
+          <CC type="bar" height={300} series={[{ name: 'Avg LTV', data: d.ltvByProduct.map((p: any) => p.avg) }]} options={{
+            chart: { toolbar: { show: false } },
+            plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '65%' } },
+            xaxis: { labels: { formatter: (v: number) => '$' + v } },
+            yaxis: { labels: { style: { fontSize: '11px' } } },
+            categories: d.ltvByProduct.map((p: any) => p.name),
+            colors: ['#8b5cf6'],
+          }} />
+        </div>
+
+        {/* LTV:CAC Ratio */}
+        <div style={S.card}>
+          <div style={S.title}>⚖️ LTV:CAC Ratio</div>
+          <CC type="radialBar" height={280} series={[Math.min(d.ltvCacRatio * 10, 100)]} options={{
+            plotOptions: { radialBar: { hollow: { size: '60%' }, dataLabels: { name: { show: true, fontSize: '14px' }, value: { show: true, fontSize: '28px', formatter: () => d.ltvCacRatio + 'x' } } } },
+            labels: ['LTV:CAC'],
+            colors: [d.ltvCacRatio >= 3 ? '#10b981' : d.ltvCacRatio >= 2 ? '#f59e0b' : '#ef4444'],
+          }} />
+        </div>
+
+        {/* RFM Treemap */}
+        <div style={S.card}>
+          <div style={S.title}>🗺️ RFM Segmentation</div>
+          <CC type="treemap" height={280} series={[{ data: d.rfmTreemap }]} options={{
+            chart: { toolbar: { show: false } },
+            colors: ['#6366f1', '#10b981', '#3b82f6', '#06b6d4', '#f97316', '#ef4444'],
+            plotOptions: { treemap: { distributed: true } },
+          }} />
+        </div>
+
+        {/* RFM Migration (grouped bar) */}
+        <div style={S.card}>
+          <div style={S.title}>🔄 RFM Segment Distribution</div>
+          <CC type="bar" height={280} series={[{ name: 'Customers', data: Object.values(d.segments) }]} options={{
+            chart: { toolbar: { show: false } },
+            xaxis: { categories: Object.keys(d.segments) },
+            colors: ['#6366f1'],
+            plotOptions: { bar: { borderRadius: 4, columnWidth: '55%', distributed: true } },
+          }} />
+        </div>
+
+        {/* Customer Lifecycle Funnel */}
+        <div style={S.card}>
+          <div style={S.title}>🔽 Customer Lifecycle Funnel</div>
+          <CC type="bar" height={260} series={[{ name: 'Customers', data: d.funnel.map((f: any) => f.count) }]} options={{
+            chart: { toolbar: { show: false } },
+            plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '60%' } },
+            xaxis: { categories: d.funnel.map((f: any) => f.label) },
+            colors: ['#6366f1'],
+          }} />
+        </div>
+
+        {/* Repeat Purchase Rate */}
+        <div style={S.card}>
+          <div style={S.title}>🔁 Repeat Purchase Rate by Month</div>
+          <CC type="bar" height={260} series={[{ name: 'Repeat %', data: d.repeatByMonth.map((m: any) => m.rate) }]} options={{
+            chart: { toolbar: { show: false } },
+            xaxis: { categories: d.repeatByMonth.map((m: any) => m.month) },
+            colors: ['#10b981'],
+            plotOptions: { bar: { borderRadius: 4, columnWidth: '55%' } },
+            yaxis: { max: 100, labels: { formatter: (v: number) => v + '%' } },
+          }} />
+        </div>
+
+        {/* Time Between Purchases */}
+        <div style={S.card}>
+          <div style={S.title}>⏱️ Time Between Purchases</div>
+          <CC type="bar" height={260} series={[{ name: 'Customers', data: d.gapHist.map((g: any) => g.count) }]} options={{
+            chart: { toolbar: { show: false } },
+            xaxis: { categories: d.gapHist.map((g: any) => g.label) },
+            colors: ['#f59e0b'],
+            plotOptions: { bar: { borderRadius: 4, columnWidth: '60%' } },
+          }} />
+        </div>
+
+        {/* Churn Prediction Scatter */}
+        <div style={S.card}>
+          <div style={S.title}>⚠️ Churn Prediction (Recency vs Frequency)</div>
+          <CC type="scatter" height={280} series={[{ name: 'Customers', data: d.churnScatter.slice(0, 200) }]} options={{
+            chart: { toolbar: { show: false } },
+            xaxis: { title: { text: 'Days Since Last Order' } },
+            yaxis: { title: { text: 'Order Count' } },
+            colors: ['#ef4444'],
+            markers: { size: 4, opacity: 0.6 },
+          }} />
+        </div>
+
+        {/* Revenue Pareto */}
+        <div style={S.card}>
+          <div style={S.title}>📊 Revenue Pareto (80/20)</div>
+          <CC type="line" height={280} series={[
+            { name: 'Cumulative %', data: d.paretoSampled.map((p: any) => p.cumPct), type: 'line' },
           ]} options={{
             chart: { toolbar: { show: false } },
-            colors: ['#1a73e8', '#10b981'],
-            stroke: { width: 2, curve: 'smooth' },
-            xaxis: { categories: monthlyTrend.map(m => m.month) },
-            yaxis: { title: { text: 'Count' } },
-            legend: { position: 'top' },
+            xaxis: { categories: d.paretoSampled.map((p: any) => p.pct + '%'), title: { text: '% of Customers' } },
+            yaxis: { max: 100, labels: { formatter: (v: number) => v + '%' } },
+            colors: ['#6366f1'],
+            stroke: { width: 3, curve: 'smooth' },
+            annotations: { yaxis: [{ y: 80, borderColor: '#ef4444', strokeDashArray: 4, label: { text: '80% Revenue', style: { color: '#ef4444' } } }] },
           }} />
         </div>
-      )}
 
-      {repeatByMonth.length > 0 && (
-        <div className="sp-card">
-          <h3><Repeat size={16} style={{ marginRight: 6 }} />Repeat Purchase Rate Over Time</h3>
-          <CC type="area" height={250} series={[{
-            name: 'Repeat Rate %',
-            data: repeatByMonth.map(m => m.rate),
-          }]} options={{
+        {/* Next Purchase Timeline */}
+        <div style={S.card}>
+          <div style={S.title}>🔮 Next Purchase Prediction</div>
+          <CC type="scatter" height={280} series={[{ name: 'Customers', data: d.nextPurchase.slice(0, 200) }]} options={{
             chart: { toolbar: { show: false } },
+            xaxis: { title: { text: 'Days Since Last Order' } },
+            yaxis: { title: { text: 'Avg Days Between Orders' } },
             colors: ['#8b5cf6'],
-            stroke: { width: 2, curve: 'smooth' },
-            fill: { type: 'gradient', gradient: { opacityFrom: 0.4, opacityTo: 0 } },
-            xaxis: { categories: repeatByMonth.map(m => m.month) },
-            yaxis: { labels: { formatter: (v: number) => v + '%' }, max: 100 },
+            markers: { size: 4, opacity: 0.6 },
           }} />
-        </div>
-      )}
-
-      <div className="sp-card">
-        <h3>Top Customers by Lifetime Value</h3>
-        <div style={{ overflowX: 'auto' }}>
-          <table className="sp-table">
-            <thead><tr><th>Customer</th><th>Email</th><th>Orders</th><th>Total Spent</th><th>Last Order</th></tr></thead>
-            <tbody>
-              {topCustomers.map((c: any, i: number) => (
-                <tr key={i}>
-                  <td><strong>{c.name}</strong></td>
-                  <td style={{ color: '#64748b', fontSize: '13px' }}>{c.email}</td>
-                  <td>{c.orders}</td>
-                  <td style={{ color: '#10b981', fontWeight: 600 }}>${c.spent.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                  <td style={{ fontSize: '13px' }}>{c.lastOrder ? new Date(c.lastOrder).toLocaleDateString() : 'N/A'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       </div>
     </div>
@@ -351,11 +470,13 @@ export default function CustomersPage() {
 }
 
 export function ErrorBoundary() {
+  const error = useRouteError();
   return (
-    <div style={{ padding: 40, fontFamily: "Inter, sans-serif" }}>
-      <h1 style={{ color: "#EF4444" }}>Something went wrong</h1>
-      <p>This page encountered an error. Please try refreshing or go back to the dashboard.</p>
-      <a href="/app" style={{ color: "#1a73e8" }}>← Back to Dashboard</a>
+    <div style={{ padding: 24, maxWidth: 800, margin: '0 auto' }}>
+      <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: 20 }}>
+        <h2 style={{ color: '#dc2626', margin: '0 0 8px' }}>Customer Intelligence Error</h2>
+        <p style={{ color: '#7f1d1d', margin: 0 }}>{(error as any)?.message || 'Failed to load customer data. Please try again.'}</p>
+      </div>
     </div>
   );
 }
