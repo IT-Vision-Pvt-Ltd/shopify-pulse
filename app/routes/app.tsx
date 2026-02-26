@@ -118,7 +118,7 @@ export default function App() {
   const toggleLock = useCallback(() => setLayoutLocked(l => !l), []);
 
   return (
-    <AppProvider isEmbeddedApp={true} apiKey={apiKey}>
+    <AppProvider isEmbeddedApp={false} apiKey={apiKey}>
       <div className={`sp-app-layout${darkMode ? ' dark' : ''}`}>
         <Sidebar currentPath={location.pathname} qs={searchParams.toString()} />
         <div className="sp-main-area">
